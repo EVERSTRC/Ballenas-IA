@@ -104,6 +104,7 @@
             z-index: 5;
         }
 
+        /* DASHBOARD PRINCIPAL (DERECHA) */
         #dashboard { 
             position: absolute;
             top: 10px;
@@ -115,6 +116,19 @@
             max-height: calc(100% - 20px);
             overflow-y: auto;
             width: 270px;
+        }
+
+        /* PANEL IA COMPLETO (IZQUIERDA) */
+        #ai-panel-left {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            width: 260px;
+            pointer-events: auto;
         }
 
         .config-box {
@@ -194,6 +208,11 @@
             background-color: #00e676;
             transition: width 0.4s ease, background-color 0.4s ease;
         }
+
+        .ai-divider {
+            border-top: 1px dashed #363c4e;
+            margin: 2px 0;
+        }
     </style>
 </head>
 <body>
@@ -226,26 +245,50 @@
             <canvas id="labels-overlay"></canvas>
         </div>
 
-        <div id="dashboard">
-            <!-- MÓDULO DE IA ORIGINAL (ALGORITMO PONDERADO COMPLETO) -->
+        <!-- MÓDULO DE IA DETALLADO A LA IZQUIERDA -->
+        <div id="ai-panel-left">
             <div class="config-box ai-card">
                 <div class="config-row">
-                    <span class="txt-purple">🤖 ANÁLISIS PREDICTIVO IA</span>
+                    <span class="txt-purple">🧠 MOTOR PREDICTIVO IA</span>
                     <span id="ai-confidence" class="txt-yellow" style="font-size: 9px; font-weight: bold;">CONF: --</span>
                 </div>
-                <div class="config-row" style="margin-top: 2px;">
-                    <span>Recomendación IA:</span>
+
+                <div class="ai-divider"></div>
+
+                <div class="config-row">
+                    <span>Sesgo Predominante:</span>
                     <span id="ai-direction" class="txt-yellow">ANALIZANDO...</span>
                 </div>
+                
                 <div class="config-row">
                     <span>Probabilidad Éxito:</span>
                     <span id="ai-prob-text" class="txt-yellow">--%</span>
                 </div>
+
                 <div class="progress-bar-bg">
                     <div id="ai-prob-bar" class="progress-bar-fill"></div>
                 </div>
-            </div>
 
+                <div class="ai-divider"></div>
+
+                <!-- DESGLOSE CUANTITATIVO DETALLADO -->
+                <div class="config-row">
+                    <span style="color:#8f96a3;">Estructura HTF (1D/4H):</span>
+                    <span id="ai-factor-htf" class="txt-yellow">--</span>
+                </div>
+                <div class="config-row">
+                    <span style="color:#8f96a3;">Sesgo VSA Ballenas:</span>
+                    <span id="ai-factor-vsa" class="txt-yellow">--</span>
+                </div>
+                <div class="config-row">
+                    <span style="color:#8f96a3;">Tendencia Supertrend:</span>
+                    <span id="ai-factor-st" class="txt-yellow">--</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- PANEL DERECHO DE SUPERTREND, VSA Y CONFIGURACIÓN -->
+        <div id="dashboard">
             <!-- MÓDULO SUPERTREND -->
             <div class="config-box" style="border-color: #00e676;">
                 <div class="config-row">
@@ -338,6 +381,9 @@
         const aiDirection = document.getElementById("ai-direction");
         const aiProbText = document.getElementById("ai-prob-text");
         const aiProbBar = document.getElementById("ai-prob-bar");
+        const aiFactorHtf = document.getElementById("ai-factor-htf");
+        const aiFactorVsa = document.getElementById("ai-factor-vsa");
+        const aiFactorSt = document.getElementById("ai-factor-st");
 
         const inputPeriod = document.getElementById("input-period");
         const inputFactor = document.getElementById("input-factor");
@@ -512,7 +558,7 @@
             return { stMarkers, lastSignal, currentTrend: trend[len - 1] };
         }
 
-        // MOTOR ORIGINAL PONDERADO DE IA COMPLETO
+        // MOTOR COMPLETO DE IA DETALLADO (IZQUIERDA)
         function updateOriginalAIDashboard(stInfo) {
             const tfWeights = {
                 '1d': 0.35,
@@ -574,6 +620,35 @@
             aiProbText.innerText = `${rawProb}%`;
             aiProbBar.style.width = `${rawProb}%`;
             aiConfidence.innerText = `CONF: ${confText}`;
+
+            // Actualizar Desglose Cuantitativo
+            const d1Data = mtfVsaCache['1d'] ? mtfVsaCache['1d'].lastState : null;
+            const h4Data = mtfVsaCache['4h'] ? mtfVsaCache['4h'].lastState : null;
+
+            if (d1Data && h4Data) {
+                if (d1Data.buyPct > 50 && h4Data.buyPct > 50) {
+                    aiFactorHtf.innerText = "ALCISTA ↑";
+                    aiFactorHtf.className = "txt-green";
+                } else if (d1Data.sellPct > 50 && h4Data.sellPct > 50) {
+                    aiFactorHtf.innerText = "BAJISTA ↓";
+                    aiFactorHtf.className = "txt-red";
+                } else {
+                    aiFactorHtf.innerText = "MIXTO ↔";
+                    aiFactorHtf.className = "txt-yellow";
+                }
+            }
+
+            const curVsa = mtfVsaCache[currentTF] ? mtfVsaCache[currentTF].lastState : null;
+            if (curVsa) {
+                if (curVsa.isBuy) { aiFactorVsa.innerText = "BALLENA COMPRA"; aiFactorVsa.className = "txt-green"; }
+                else if (curVsa.isSell) { aiFactorVsa.innerText = "BALLENA VENTA"; aiFactorVsa.className = "txt-red"; }
+                else { aiFactorVsa.innerText = "ACUMULACIÓN"; aiFactorVsa.className = "txt-yellow"; }
+            }
+
+            if (stInfo && stInfo.currentTrend) {
+                aiFactorSt.innerText = stInfo.currentTrend === 1 ? "BULLISH" : "BEARISH";
+                aiFactorSt.className = stInfo.currentTrend === 1 ? "txt-green" : "txt-red";
+            }
 
             if (directionText.includes("BUY")) {
                 aiDirection.innerText = directionText;
