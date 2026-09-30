@@ -290,7 +290,7 @@
                     </div>
                 </div>
 
-                <!-- BACKTESTING Y METRICAS DE RENDIMIENTO -->
+                <!-- BACKTESTING Y METRICAS -->
                 <div class="config-row" style="margin-top: 2px;">
                     <span style="color:#8f96a3;">Track Record IA (Backtest 15m):</span>
                     <span id="ai-winrate" class="txt-green">WR: 0% (0/0)</span>
@@ -826,7 +826,7 @@
 
             if (orderBlocks.length > 0) {
                 const ob = orderBlocks[orderBlocks.length - 1];
-                narrative += `Bloque de Ordenes cercano en $${ob.bottom.toFixed(1)} - $${ob.top.toFixed(1)}.`;
+                narrative += `Bloque de Órdenes cercano en $${ob.bottom.toFixed(1)} - $${ob.top.toFixed(1)}.`;
             }
 
             aiNarrativeText.innerText = narrative;
@@ -888,7 +888,7 @@
             generateAiNarrative(pred15m, divInfo, stInfo);
         }
 
-        // DIBUJADO DE CAPA TRANSPARENTE DE ETIQUETAS Y ZONAS CON ANTI-SOLAPAMIENTO
+        // DIBUJADO DE CAPA TRANSPARENTE CON ANTI-SOLAPAMIENTO Y MARGEN DE PANELES
         function drawOverlay() {
             ctx.clearRect(0, 0, overlay.width, overlay.height);
 
@@ -902,7 +902,7 @@
                         ctx.fillRect(0, yTop, overlay.width, yBottom - yTop);
                         ctx.fillStyle = ob.type === 'BULLISH' ? '#00e676' : '#ff1744';
                         ctx.font = 'bold 9px sans-serif';
-                        ctx.fillText(`OB ${ob.type}`, 10, yTop + 10);
+                        ctx.fillText(`OB ${ob.type}`, 310, yTop + 10);
                     }
                 });
 
@@ -914,14 +914,13 @@
                         ctx.fillRect(0, yTop, overlay.width, yBottom - yTop);
                         ctx.fillStyle = '#ffd700';
                         ctx.font = 'bold 9px sans-serif';
-                        ctx.fillText(`FVG (Vacío)`, 100, yTop + 10);
+                        ctx.fillText(`FVG (Vacío)`, 380, yTop + 10);
                     }
                 });
             }
 
-            // 2. Dibujar Líneas S/R VSA con Algoritmo de Desplazamiento Anti-Colisión
+            // 2. Dibujar Líneas S/R VSA con Algoritmo de Separación Forzada y Cajas Opacas
             if (showVsaLines && vsaLinesToDraw.length > 0) {
-                // Mapear líneas a coordenadas Y
                 let mappedLines = [];
                 vsaLinesToDraw.forEach(line => {
                     const y = candlestickSeries.priceToCoordinate(line.price);
@@ -930,20 +929,16 @@
                     }
                 });
 
-                // Ordenar por coordenada Y
                 mappedLines.sort((a, b) => a.y - b.y);
 
-                // Algoritmo de resolución de colisiones verticales (distancia mínima de 14px)
-                const minDistance = 14;
+                const minDistance = 16;
                 for (let i = 1; i < mappedLines.length; i++) {
                     if (mappedLines[i].textY - mappedLines[i - 1].textY < minDistance) {
                         mappedLines[i].textY = mappedLines[i - 1].textY + minDistance;
                     }
                 }
 
-                // Renderizar líneas y etiquetas
                 mappedLines.forEach(line => {
-                    // Dibujar la línea punteada en la coordenada exacta del precio
                     ctx.beginPath();
                     ctx.setLineDash([3, 3]);
                     ctx.strokeStyle = line.color;
@@ -952,18 +947,21 @@
                     ctx.lineTo(overlay.width, line.y);
                     ctx.stroke();
 
-                    // Fondo negro sutil para la etiqueta desplazada
                     const text = `${line.label}: $${line.price.toFixed(2)}`;
                     ctx.font = 'bold 10px monospace';
                     const textWidth = ctx.measureText(text).width;
-                    const textX = overlay.width - textWidth - 120;
+                    const textX = overlay.width - textWidth - 65;
 
-                    ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
-                    ctx.fillRect(textX - 4, line.textY - 10, textWidth + 8, 13);
+                    ctx.fillStyle = "#000000";
+                    ctx.fillRect(textX - 4, line.textY - 10, textWidth + 8, 14);
 
-                    // Texto de la etiqueta VSA
+                    ctx.strokeStyle = line.color;
+                    ctx.lineWidth = 0.5;
+                    ctx.setLineDash([]);
+                    ctx.strokeRect(textX - 4, line.textY - 10, textWidth + 8, 14);
+
                     ctx.fillStyle = line.color;
-                    ctx.fillText(text, textX, line.textY - 1);
+                    ctx.fillText(text, textX, line.textY + 1);
                 });
             }
         }
@@ -1123,7 +1121,7 @@
             };
         }
 
-        // Controles UI
+        // Eventos UI
         timeframeSelect.addEventListener("change", (e) => {
             currentTF = e.target.value;
             initChart();
