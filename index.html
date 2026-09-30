@@ -63,11 +63,6 @@
             color: #ffd700;
             border-color: #ffd700;
         }
-        .status-badge.error {
-            background-color: rgba(255, 23, 68, 0.15);
-            color: #ff1744;
-            border-color: #ff1744;
-        }
 
         .btn-toggle {
             background-color: #2962ff;
@@ -232,8 +227,8 @@
             <select id="timeframe" class="select-tf">
                 <option value="1m">1 Minuto</option>
                 <option value="3m">3 Minutos</option>
-                <option value="5m" selected>5 Minutos</option>
-                <option value="15m">15 Minutos</option>
+                <option value="5m">5 Minutos</option>
+                <option value="15m" selected>15 Minutos</option>
                 <option value="30m">30 Minutos</option>
                 <option value="1h">1 Hora</option>
                 <option value="4h">4 Horas</option>
@@ -385,9 +380,8 @@
         let mtfVsaCache = {};
         let vsaLinesToDraw = [];
 
-        let currentTF = "5m";
+        let currentTF = "15m";
         let ws = null;
-        let reconnectTimer = null;
 
         const statusEl = document.getElementById("status");
         const timeframeSelect = document.getElementById("timeframe");
@@ -749,36 +743,33 @@
             const h4Data = mtfVsaCache['4h'] ? mtfVsaCache['4h'].lastState : null;
 
             if (d1Data && h4Data) {
-                if (d1Data.isBuy && h4Data.isBuy) {
+                if (d1Data.buyPct > 55 && h4Data.buyPct > 55) {
                     aiFactorHtf.innerText = "ALCISTA (BULLISH)";
                     aiFactorHtf.className = "txt-green";
-                } else if (d1Data.isSell && h4Data.isSell) {
+                } else if (d1Data.sellPct > 55 && h4Data.sellPct > 55) {
                     aiFactorHtf.innerText = "BAJISTA (BEARISH)";
                     aiFactorHtf.className = "txt-red";
                 } else {
-                    aiFactorHtf.innerText = "MIXTO / NEUTRAL";
+                    aiFactorHtf.innerText = "NEUTRAL / MIXTO";
                     aiFactorHtf.className = "txt-yellow";
                 }
-            } else {
-                aiFactorHtf.innerText = "ANALIZANDO...";
-                aiFactorHtf.className = "txt-yellow";
             }
 
-            const current15m = mtfVsaCache['15m'] ? mtfVsaCache['15m'].lastState : null;
-            if (current15m) {
-                if (current15m.isBuy) {
-                    aiFactorVsa.innerText = "ACUMULACIÓN (COMPRA)";
+            const c15m = mtfVsaCache['15m'] ? mtfVsaCache['15m'].lastState : null;
+            if (c15m) {
+                if (c15m.isBuy) {
+                    aiFactorVsa.innerText = "COMPRA ACUMULACIÓN";
                     aiFactorVsa.className = "txt-green";
-                } else if (current15m.isSell) {
-                    aiFactorVsa.innerText = "DISTRIBUCIÓN (VENTA)";
+                } else if (c15m.isSell) {
+                    aiFactorVsa.innerText = "VENTA DISTRIBUCIÓN";
                     aiFactorVsa.className = "txt-red";
                 } else {
-                    aiFactorVsa.innerText = "NEUTRAL / SIN VOL.";
+                    aiFactorVsa.innerText = "SIN ANOMALÍAS";
                     aiFactorVsa.className = "txt-yellow";
                 }
             }
 
-            if (stInfo && stInfo.currentTrend) {
+            if (stInfo) {
                 if (stInfo.currentTrend === 1) {
                     aiFactorSt.innerText = "TENDENCIA ALCISTA";
                     aiFactorSt.className = "txt-green";
@@ -795,57 +786,63 @@
 
             vsaLinesToDraw.forEach(line => {
                 const y = candlestickSeries.priceToCoordinate(line.price);
-                if (y === null || y < 0 || y > overlay.height) return;
+                if (y !== null && y >= 0 && y <= overlay.height) {
+                    ctx.beginPath();
+                    ctx.setLineDash([4, 4]);
+                    ctx.strokeStyle = line.color;
+                    ctx.lineWidth = 1;
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(overlay.width, y);
+                    ctx.stroke();
 
-                ctx.beginPath();
-                ctx.setLineDash([4, 4]);
-                ctx.strokeStyle = line.color;
-                ctx.lineWidth = 1;
-                ctx.moveTo(0, y);
-                ctx.lineTo(overlay.width, y);
-                ctx.stroke();
-
-                ctx.setLineDash([]);
-                ctx.fillStyle = line.color;
-                ctx.font = '10px sans-serif';
-                ctx.fillText(`${line.label}: $${line.price.toFixed(2)}`, 10, y - 4);
+                    ctx.font = '10px sans-serif';
+                    ctx.fillStyle = line.color;
+                    ctx.fillText(`${line.label}: $${line.price.toFixed(2)}`, overlay.width - 150, y - 4);
+                }
             });
         }
 
-        function updateVSATableRow(tf, state) {
-            const row = document.getElementById(`row-${tf}`);
-            if (!row) return;
+        function updateChartAndUI() {
+            if (currentCandleData.length === 0) return;
 
-            const cells = row.getElementsByTagName("td");
-            if (!state) return;
-
-            if (state.isBuy) {
-                cells[1].innerHTML = `<span class="badge-buy">COMPRA</span>`;
-            } else if (state.isSell) {
-                cells[1].innerHTML = `<span class="badge-sell">VENTA</span>`;
+            const stData = getSupertrendMarkers(currentCandleData);
+            if (showSupertrend) {
+                candlestickSeries.setMarkers(stData.stMarkers);
             } else {
-                cells[1].innerHTML = `<span class="badge-neu">NEU</span>`;
+                candlestickSeries.setMarkers([]);
             }
 
-            cells[2].innerText = state.vol ? Math.round(state.vol).toLocaleString() : "--";
-            cells[3].innerText = `${state.buyPct}%`;
-            cells[4].innerText = `${state.sellPct}%`;
+            if (stData.lastSignal) {
+                dashStSignal.innerText = stData.lastSignal.type;
+                dashStSignal.className = stData.lastSignal.type === 'BUY' ? 'txt-green' : 'txt-red';
+                dashStPrice.innerText = `$${stData.lastSignal.price.toFixed(2)}`;
+            }
+
+            vsaLinesToDraw = [];
+            const timeframes = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d'];
+            timeframes.forEach(tf => {
+                const res = mtfVsaCache[tf];
+                if (res) {
+                    if (res.lastSupport) vsaLinesToDraw.push({ price: res.lastSupport.price, color: '#00e676', label: `Soporte VSA (${tf})` });
+                    if (res.lastResistance) vsaLinesToDraw.push({ price: res.lastResistance.price, color: '#ff1744', label: `Resistencia VSA (${tf})` });
+                }
+            });
+
+            drawOverlay();
+            updateAIDashboard(stData);
         }
 
-        // PETICIÓN DE HISTORIAL GARANTIZADA SIN CORS (data-api.binance.vision + Proxy Fallback)
-        async function fetchKlines(symbol, interval, limit = 200) {
+        async function fetchKlines(symbol, interval, limit = 300) {
             const endpoints = [
-                `https://data-api.binance.vision/api/3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
-                `https://api.binance.com/api/3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
-                `https://api.cors.lol/?url=https://api.binance.com/api/3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+                `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
+                `https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
             ];
 
-            for (const url of endpoints) {
+            for (let url of endpoints) {
                 try {
                     const response = await fetch(url);
-                    if (!response.ok) continue;
-                    const data = await response.json();
-                    if (Array.isArray(data) && data.length > 0) {
+                    if (response.ok) {
+                        const data = await response.json();
                         return data.map(d => ({
                             time: Math.floor(d[0] / 1000),
                             open: parseFloat(d[1]),
@@ -856,180 +853,126 @@
                         }));
                     }
                 } catch (err) {
-                    console.warn(`Reintentando conexión API para timeframe ${interval}...`);
+                    console.warn(`Fallback fetch en ${url}:`, err);
                 }
             }
-            console.error(`Error al cargar datos REST para ${interval}`);
             return [];
         }
 
-        async function updateMTFData() {
-            const tfs = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d'];
-            const fetchPromises = tfs.map(tf => fetchKlines("BTCUSDT", tf, 100));
-
-            const results = await Promise.allSettled(fetchPromises);
-            
-            results.forEach((res, index) => {
-                const tf = tfs[index];
-                if (res.status === 'fulfilled' && res.value && res.value.length > 0) {
-                    const candles = res.value;
-                    const vsaRes = analyzeVSAData(candles, periodoVol, factorVol, true);
+        async function loadMTFData() {
+            const timeframes = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d'];
+            for (let tf of timeframes) {
+                const data = await fetchKlines("BTCUSDT", tf, 100);
+                if (data.length > 0) {
+                    const vsaRes = analyzeVSAData(data, periodoVol, factorVol, true);
                     mtfVsaCache[tf] = vsaRes;
-                    updateVSATableRow(tf, vsaRes.lastState);
+                    updateVSATableRow(tf, vsaRes);
                 }
-            });
-
-            updateChartAndEngine();
+            }
+            updateChartAndUI();
         }
 
-        function updateChartAndEngine() {
-            if (currentCandleData.length === 0) return;
+        function updateVSATableRow(tf, vsaRes) {
+            const row = document.getElementById(`row-${tf}`);
+            if (!row || !vsaRes.lastState) return;
 
-            candlestickSeries.setData(currentCandleData);
-            chart.timeScale().fitContent();
+            const st = vsaRes.lastState;
+            const cells = row.getElementsByTagName('td');
+            
+            let badge = '<span class="badge-neu">NEU</span>';
+            if (st.isBuy) badge = '<span class="badge-buy">COMPRA</span>';
+            else if (st.isSell) badge = '<span class="badge-sell">VENTA</span>';
 
-            vsaLinesToDraw = [];
-            Object.keys(mtfVsaCache).forEach(tf => {
-                const cache = mtfVsaCache[tf];
-                if (cache) {
-                    if (cache.lastSupport) {
-                        vsaLinesToDraw.push({ price: cache.lastSupport.price, color: '#00e676', label: `Sop. Ballena (${tf})` });
-                    }
-                    if (cache.lastResistance) {
-                        vsaLinesToDraw.push({ price: cache.lastResistance.price, color: '#ff1744', label: `Res. Ballena (${tf})` });
-                    }
-                }
-            });
-
-            drawOverlay();
-
-            const stInfo = getSupertrendMarkers(currentCandleData);
-            if (showSupertrend && stInfo.stMarkers) {
-                candlestickSeries.setMarkers(stInfo.stMarkers);
-            } else {
-                candlestickSeries.setMarkers([]);
-            }
-
-            if (stInfo.lastSignal) {
-                dashStSignal.innerText = stInfo.lastSignal.type;
-                dashStSignal.className = stInfo.lastSignal.type === 'BUY' ? 'txt-green' : 'txt-red';
-                dashStPrice.innerText = `$${stInfo.lastSignal.price.toFixed(2)}`;
-            }
-
-            updateAIDashboard(stInfo);
+            cells[1].innerHTML = badge;
+            cells[2].innerText = st.vol.toFixed(2);
+            cells[3].innerText = `${st.buyPct}%`;
+            cells[4].innerText = `${st.sellPct}%`;
         }
 
-        function connectWebSocket(tf) {
-            if (ws) {
-                ws.onclose = null;
-                ws.onerror = null;
-                ws.close();
-            }
-            if (reconnectTimer) clearTimeout(reconnectTimer);
-
-            statusEl.innerText = "Conectando...";
+        async function initChart() {
+            statusEl.innerText = "Cargando datos...";
             statusEl.className = "status-badge connecting";
 
-            const tfLower = tf.toLowerCase();
-            const streamName = `btcusdt@kline_${tfLower}`;
-            ws = new WebSocket(`wss://stream.binance.com:9443/ws/${streamName}`);
+            const candles = await fetchKlines("BTCUSDT", currentTF, 300);
+            if (candles.length > 0) {
+                currentCandleData = candles;
+                candlestickSeries.setData(currentCandleData);
+                chart.timeScale().fitContent();
+            }
+
+            await loadMTFData();
+            connectWebSocket();
+        }
+
+        function connectWebSocket() {
+            if (ws) ws.close();
+
+            ws = new WebSocket(`wss://stream.binance.com:9443/ws/btcusdt@kline_${currentTF}`);
 
             ws.onopen = () => {
-                statusEl.innerText = "EN VIVO";
+                statusEl.innerText = "CONECTADO EN VIVO";
                 statusEl.className = "status-badge";
             };
 
             ws.onmessage = (event) => {
-                try {
-                    const msg = JSON.parse(event.data);
-                    if (msg.e === "kline") {
-                        const k = msg.k;
-                        const candle = {
-                            time: Math.floor(k.t / 1000),
-                            open: parseFloat(k.o),
-                            high: parseFloat(k.h),
-                            low: parseFloat(k.l),
-                            close: parseFloat(k.c),
-                            volume: parseFloat(k.v)
-                        };
+                const msg = JSON.parse(event.data);
+                const k = msg.k;
 
-                        if (currentCandleData.length > 0) {
-                            const lastIndex = currentCandleData.length - 1;
-                            if (currentCandleData[lastIndex].time === candle.time) {
-                                currentCandleData[lastIndex] = candle;
-                            } else {
-                                currentCandleData.push(candle);
-                                if (currentCandleData.length > 500) currentCandleData.shift();
-                            }
-                        } else {
-                            currentCandleData.push(candle);
-                        }
+                const candle = {
+                    time: Math.floor(k.t / 1000),
+                    open: parseFloat(k.o),
+                    high: parseFloat(k.h),
+                    low: parseFloat(k.l),
+                    close: parseFloat(k.c),
+                    volume: parseFloat(k.v)
+                };
 
-                        candlestickSeries.update(candle);
-                        
-                        const stInfo = getSupertrendMarkers(currentCandleData);
-                        updateAIDashboard(stInfo);
-                        drawOverlay();
+                candlestickSeries.update(candle);
+
+                if (currentCandleData.length > 0) {
+                    const lastIdx = currentCandleData.length - 1;
+                    if (currentCandleData[lastIdx].time === candle.time) {
+                        currentCandleData[lastIdx] = candle;
+                    } else {
+                        currentCandleData.push(candle);
+                        currentCandleData.shift();
                     }
-                } catch (e) {
-                    console.error("Error procesando mensaje WS:", e);
                 }
+
+                updateChartAndUI();
             };
 
-            ws.onerror = (err) => {
-                console.error("Error en WebSocket:", err);
-                statusEl.innerText = "ERROR WS";
-                statusEl.className = "status-badge error";
+            ws.onerror = () => {
+                statusEl.innerText = "ERROR CONEXIÓN";
+                statusEl.className = "status-badge connecting";
             };
 
             ws.onclose = () => {
                 statusEl.innerText = "RECONECTANDO...";
                 statusEl.className = "status-badge connecting";
-                reconnectTimer = setTimeout(() => {
-                    connectWebSocket(currentTF);
-                }, 3000);
+                setTimeout(connectWebSocket, 3000);
             };
         }
 
-        async function init() {
-            // 1. Cargar historial del gráfico principal
-            currentCandleData = await fetchKlines("BTCUSDT", currentTF, 300);
-            if (currentCandleData.length > 0) {
-                candlestickSeries.setData(currentCandleData);
-                chart.timeScale().fitContent();
-            }
-            
-            // 2. Iniciar WebSocket en tiempo real
-            connectWebSocket(currentTF);
-
-            // 3. Procesar datos multitimeframe
-            updateMTFData();
-        }
-
-        timeframeSelect.addEventListener("change", async (e) => {
+        // Eventos UI Controles
+        timeframeSelect.addEventListener("change", (e) => {
             currentTF = e.target.value;
-            statusEl.innerText = "Cargando...";
-            statusEl.className = "status-badge connecting";
-            
-            currentCandleData = await fetchKlines("BTCUSDT", currentTF, 300);
-            connectWebSocket(currentTF);
-            updateChartAndEngine();
+            initChart();
         });
 
         btnSupertrend.addEventListener("click", () => {
             showSupertrend = !showSupertrend;
             btnSupertrend.classList.toggle("inactive", !showSupertrend);
-            updateChartAndEngine();
+            updateChartAndUI();
         });
 
         btnFilter.addEventListener("click", () => {
             useFilter = !useFilter;
             btnFilter.classList.toggle("active-filter", useFilter);
-            btnFilter.classList.toggle("inactive", !useFilter);
             btnFilter.innerText = useFilter ? "Filtro ST: ON" : "Filtro ST: OFF";
             stFilterStatus.innerText = useFilter ? "[FILTRO ACTIVO]" : "[FILTRO INACTIVO]";
             stFilterStatus.style.color = useFilter ? "#ff9800" : "#787b86";
-            updateChartAndEngine();
+            updateChartAndUI();
         });
 
         btnVsa.addEventListener("click", () => {
@@ -1041,7 +984,7 @@
         btnSignals.addEventListener("click", () => {
             showVsaSignals = !showVsaSignals;
             btnSignals.classList.toggle("inactive", !showVsaSignals);
-            updateChartAndEngine();
+            updateChartAndUI();
         });
 
         btnPanel.addEventListener("click", () => {
@@ -1051,16 +994,17 @@
         });
 
         inputPeriod.addEventListener("change", (e) => {
-            periodoVol = parseFloat(e.target.value) || 20;
-            updateMTFData();
+            periodoVol = parseInt(e.target.value) || 20;
+            loadMTFData();
         });
 
         inputFactor.addEventListener("change", (e) => {
             factorVol = parseFloat(e.target.value) || 1.8;
-            updateMTFData();
+            loadMTFData();
         });
 
-        init();
+        // Inicialización
+        initChart();
     });
     </script>
 </body>
