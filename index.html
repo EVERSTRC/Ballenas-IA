@@ -451,7 +451,6 @@
         let currentCandleData = [];
         let mtfVsaCache = {};
         let vsaLinesToDraw = [];
-        let activePriceLines = [];
         
         let vpvrData = { buckets: [], pocPrice: null, maxVol: 0 };
         
@@ -545,58 +544,67 @@
             upColor: '#089981', downColor: '#f23645', borderVisible: false, wickUpColor: '#089981', wickDownColor: '#f23645'
         });
 
-        function clearNativePriceLines() {
-            activePriceLines.forEach(line => candlestickSeries.removePriceLine(line));
-            activePriceLines = [];
-        }
-
-        /* DIBUJO DE LÍNEAS NATIVAS MULTI-TIMEFRAME CON ETIQUETAS FLOTANTES FIJAS */
-        function renderNativePriceLines() {
-            clearNativePriceLines();
-            if (!showVsaLines) return;
-
-            vsaLinesToDraw.forEach(item => {
-                const pLine = candlestickSeries.createPriceLine({
-                    price: item.price,
-                    color: item.color,
-                    lineWidth: item.label.includes("4H") || item.label.includes("1D") ? 2 : 1,
-                    lineStyle: LightweightCharts.LineStyle.Solid,
-                    axisLabelVisible: true,
-                    title: item.label
-                });
-                activePriceLines.push(pLine);
-            });
-        }
-
         function collectAllVSALines() {
             let lines = [];
             
             const localAnalysis = analyzeVSAData(currentCandleData, periodoVol, factorVol);
             if (localAnalysis.lastResistance) {
-                lines.push({ price: localAnalysis.lastResistance.price, label: "Res Chart", type: 'SELL', color: '#ff1744' });
+                lines.push({ 
+                    price: localAnalysis.lastResistance.price, 
+                    time: localAnalysis.lastResistance.time,
+                    label: "Res Chart", 
+                    type: 'SELL', 
+                    color: '#ff0055' 
+                });
             }
             if (localAnalysis.lastSupport) {
-                lines.push({ price: localAnalysis.lastSupport.price, label: "Sop Chart", type: 'BUY', color: '#00e5ff' });
+                lines.push({ 
+                    price: localAnalysis.lastSupport.price, 
+                    time: localAnalysis.lastSupport.time,
+                    label: "Sop Chart", 
+                    type: 'BUY', 
+                    color: '#00e5ff' 
+                });
             }
 
             const tfs = ['5m', '15m', '1h', '4h', '1d'];
             const labelsMap = { '5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D' };
+            const colorsMap = {
+                '5m': { res: '#ff0055', sop: '#00e5ff' },
+                '15m': { res: '#ff0055', sop: '#00e5ff' },
+                '1h': { res: '#e60000', sop: '#0000ff' },
+                '4h': { res: '#d000ff', sop: '#d000ff' },
+                '1d': { res: '#ffaa00', sop: '#ffaa00' }
+            };
 
             tfs.forEach(tf => {
                 const cache = mtfVsaCache[tf];
                 if (cache) {
                     const labelTF = labelsMap[tf] || tf;
+                    const cScheme = colorsMap[tf] || { res: '#ff0055', sop: '#00e676' };
+
                     if (cache.lastResistance) {
-                        lines.push({ price: cache.lastResistance.price, label: `Res ${labelTF}`, type: 'SELL', color: '#ff1744' });
+                        lines.push({ 
+                            price: cache.lastResistance.price, 
+                            time: cache.lastResistance.time,
+                            label: `Res ${labelTF}`, 
+                            type: 'SELL', 
+                            color: cScheme.res 
+                        });
                     }
                     if (cache.lastSupport) {
-                        lines.push({ price: cache.lastSupport.price, label: `Sop ${labelTF}`, type: 'BUY', color: '#00e676' });
+                        lines.push({ 
+                            price: cache.lastSupport.price, 
+                            time: cache.lastSupport.time,
+                            label: `Sop ${labelTF}`, 
+                            type: 'BUY', 
+                            color: cScheme.sop 
+                        });
                     }
                 }
             });
 
             vsaLinesToDraw = lines;
-            renderNativePriceLines();
         }
 
         function getSupertrendMarkers(candles, atrPeriods = 14, multiplier = 2.0) {
@@ -681,6 +689,19 @@
                     }
                 }
             }
+
+            if (showVsaSignals) {
+                const vsaAn = analyzeVSAData(candles, periodoVol, factorVol);
+                vsaAn.events.forEach(ev => {
+                    if (ev.type === 'BUY') {
+                        stMarkers.push({ time: ev.time, position: 'belowBar', color: '#00e676', shape: 'arrowUp', text: 'BUY' });
+                    } else if (ev.type === 'SELL') {
+                        stMarkers.push({ time: ev.time, position: 'aboveBar', color: '#ff1744', shape: 'arrowDown', text: 'SELL' });
+                    }
+                });
+                stMarkers.sort((a, b) => a.time - b.time);
+            }
+
             return { stMarkers, lastSignal };
         }
 
@@ -692,16 +713,14 @@
         }
 
         function resizeCanvas() {
-            const dpr = window.devicePixelRatio || 1;
             const width = chartContainer.clientWidth;
             const height = chartContainer.clientHeight;
 
-            overlay.width = width * dpr;
-            overlay.height = height * dpr;
+            overlay.width = width;
+            overlay.height = height;
             overlay.style.width = width + "px";
             overlay.style.height = height + "px";
 
-            ctx.scale(dpr, dpr);
             drawOverlay();
         }
 
@@ -911,6 +930,7 @@
             document.getElementById("setup-rr").innerText = `1 : ${rr}`;
         }
 
+        /* DIBUJO REAL EN CANVAS: SEGMENTOS VSA + BADGES FLOTANTES */
         function drawOverlay() {
             const width = chartContainer.clientWidth;
             const height = chartContainer.clientHeight;
@@ -924,7 +944,7 @@
                     if (yTop !== null && yBottom !== null) {
                         const h = Math.max(1, Math.abs(yBottom - yTop));
                         const w = (b.volume / vpvrData.maxVol) * maxBarWidth;
-                        ctx.fillStyle = "rgba(41, 98, 255, 0.25)";
+                        ctx.fillStyle = "rgba(41, 98, 255, 0.22)";
                         ctx.fillRect(width - w, Math.min(yTop, yBottom), w, h);
                     }
                 });
@@ -943,11 +963,61 @@
                     }
                 }
             }
+
+            if (showVsaLines && vsaLinesToDraw.length > 0) {
+                vsaLinesToDraw.forEach(item => {
+                    const y = candlestickSeries.priceToCoordinate(item.price);
+                    if (y === null || y < 0 || y > height) return;
+
+                    let xStart = 0;
+                    if (item.time) {
+                        const calculatedX = chart.timeScale().timeToCoordinate(item.time);
+                        if (calculatedX !== null) {
+                            xStart = Math.max(0, calculatedX);
+                        }
+                    }
+
+                    const xEnd = width - 60; // Deja margen para la escala del precio
+                    
+                    // 1. Dibuja el segmento de línea horizontal
+                    ctx.beginPath();
+                    ctx.strokeStyle = item.color;
+                    ctx.lineWidth = item.label.includes("4H") || item.label.includes("1D") ? 3 : 2;
+                    ctx.setLineDash([]);
+                    ctx.moveTo(xStart, y);
+                    ctx.lineTo(xEnd, y);
+                    ctx.stroke();
+
+                    // 2. Dibuja la etiqueta/badge tipo píldora flotante
+                    ctx.font = "bold 10px -apple-system, BlinkMacSystemFont, Roboto, sans-serif";
+                    const textWidth = ctx.measureText(item.label).width;
+                    const paddingX = 6;
+                    const badgeWidth = textWidth + (paddingX * 2);
+                    const badgeHeight = 16;
+                    const badgeX = xEnd - badgeWidth;
+                    const badgeY = y - (badgeHeight / 2);
+
+                    ctx.fillStyle = item.color;
+                    ctx.beginPath();
+                    if (ctx.roundRect) {
+                        ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 3);
+                    } else {
+                        ctx.rect(badgeX, badgeY, badgeWidth, badgeHeight);
+                    }
+                    ctx.fill();
+
+                    // 3. Texto dentro del badge
+                    ctx.fillStyle = "#ffffff";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(item.label, badgeX + (badgeWidth / 2), y);
+                });
+            }
         }
 
         function refreshSupertrendDisplay() {
             const { stMarkers, lastSignal } = getSupertrendMarkers(currentCandleData);
-            if (showSupertrend) {
+            if (showSupertrend || showVsaSignals) {
                 candlestickSeries.setMarkers(stMarkers);
             } else {
                 candlestickSeries.setMarkers([]);
@@ -1007,7 +1077,7 @@
             const tfs = ['5m', '15m', '1h', '4h', '1d'];
             for (let tf of tfs) {
                 try {
-                    const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${tf}&limit=50`);
+                    const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${tf}&limit=100`);
                     const data = await res.json();
                     const candles = data.map(d => ({
                         time: d[0] / 1000,
@@ -1108,7 +1178,13 @@
         btnVsa.addEventListener("click", () => {
             showVsaLines = !showVsaLines;
             btnVsa.classList.toggle("inactive", !showVsaLines);
-            renderNativePriceLines();
+            drawOverlay();
+        });
+
+        btnSignals.addEventListener("click", () => {
+            showVsaSignals = !showVsaSignals;
+            btnSignals.classList.toggle("inactive", !showVsaSignals);
+            refreshSupertrendDisplay();
         });
 
         btnVpvr.addEventListener("click", () => {
