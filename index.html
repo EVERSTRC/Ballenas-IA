@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Bitcoin Trading Terminal - AI & VSA Complete System</title>
+    <title>Bitcoin Trading Terminal - AI & VSA Original System</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -130,7 +130,7 @@
         }
 
         .ai-card {
-            border: 1px solid #d000ff;
+            border: 1px solid #e040fb;
             background: linear-gradient(135deg, rgba(19, 23, 34, 0.95), rgba(41, 14, 56, 0.95));
         }
 
@@ -192,7 +192,7 @@
             height: 100%;
             width: 0%;
             background-color: #00e676;
-            transition: width 0.4s ease;
+            transition: width 0.4s ease, background-color 0.4s ease;
         }
     </style>
 </head>
@@ -227,19 +227,19 @@
         </div>
 
         <div id="dashboard">
-            <!-- MÓDULO DE INTELIGENCIA ARTIFICIAL -->
+            <!-- MÓDULO DE IA ORIGINAL (ALGORITMO PONDERADO COMPLETO) -->
             <div class="config-box ai-card">
                 <div class="config-row">
-                    <span class="txt-purple">🧠 MOTOR IA PREDICTIVO</span>
-                    <span id="ai-confidence" class="txt-yellow" style="font-size: 9px;">CONF: MEDIA</span>
+                    <span class="txt-purple">🤖 ANÁLISIS PREDICTIVO IA</span>
+                    <span id="ai-confidence" class="txt-yellow" style="font-size: 9px; font-weight: bold;">CONF: --</span>
                 </div>
                 <div class="config-row" style="margin-top: 2px;">
-                    <span>Dirección Estimada:</span>
-                    <span id="ai-direction" class="txt-green">BUY (COMPRA)</span>
+                    <span>Recomendación IA:</span>
+                    <span id="ai-direction" class="txt-yellow">ANALIZANDO...</span>
                 </div>
                 <div class="config-row">
                     <span>Probabilidad Éxito:</span>
-                    <span id="ai-prob-text" class="txt-green">78%</span>
+                    <span id="ai-prob-text" class="txt-yellow">--%</span>
                 </div>
                 <div class="progress-bar-bg">
                     <div id="ai-prob-bar" class="progress-bar-fill"></div>
@@ -410,22 +410,21 @@
                 }
                 if (isSell) {
                     lastResistance = { price: candle.high, time: candle.time };
-                    events.push({ type: 'SELL', typeName: 'SELL', time: candle.time, price: candle.close });
+                    events.push({ type: 'SELL', time: candle.time, price: candle.close });
                 }
 
                 if (i === targetCandles.length - 1) {
                     const buyPct = Math.round((volBuy / effVol) * 100);
                     const sellPct = 100 - buyPct;
-                    lastState = { isBuy, isSell, vol: effVol, avgVol, buyPct, sellPct };
+                    lastState = { isBuy, isSell, isWhale, vol: effVol, avgVol, buyPct, sellPct };
                 }
             }
 
             return { events, lastSupport, lastResistance, lastState };
         }
 
-        // MOTOR SUPERTREND INTEGRADO
         function getSupertrendMarkers(candles, atrPeriods = 14, multiplier = 2.0) {
-            if (!candles || candles.length < atrPeriods + 2) return { stMarkers: [], lastSignal: null };
+            if (!candles || candles.length < atrPeriods + 2) return { stMarkers: [], lastSignal: null, currentTrend: 0 };
             const len = candles.length;
             const tr = new Float64Array(len);
             tr[0] = candles[0].high - candles[0].low;
@@ -513,64 +512,81 @@
             return { stMarkers, lastSignal, currentTrend: trend[len - 1] };
         }
 
-        // MOTOR DE INTELIGENCIA ARTIFICIAL DE DASHBOARD
-        function updateAIDashboard(stInfo) {
-            let bullPoints = 0;
-            let bearPoints = 0;
-            let totalTFs = 0;
+        // MOTOR ORIGINAL PONDERADO DE IA COMPLETO
+        function updateOriginalAIDashboard(stInfo) {
+            const tfWeights = {
+                '1d': 0.35,
+                '4h': 0.25,
+                '1h': 0.20,
+                '15m': 0.12,
+                '5m': 0.08
+            };
 
-            const tfs = ['5m', '15m', '1h', '4h', '1d'];
-            tfs.forEach(tf => {
+            let weightedBullScore = 0;
+            let weightedBearScore = 0;
+
+            Object.keys(tfWeights).forEach(tf => {
                 const cache = mtfVsaCache[tf];
-                if (cache && cache.lastState) {
-                    totalTFs++;
-                    if (cache.lastState.buyPct > 50) bullPoints += (cache.lastState.buyPct - 50);
-                    else bearPoints += (cache.lastState.sellPct - 50);
+                const weight = tfWeights[tf];
 
-                    if (cache.lastState.isBuy) bullPoints += 25;
-                    if (cache.lastState.isSell) bearPoints += 25;
+                if (cache && cache.lastState) {
+                    const st = cache.lastState;
+                    let bullShare = st.buyPct / 100;
+                    let bearShare = st.sellPct / 100;
+
+                    if (st.isBuy) bullShare += 0.25;
+                    if (st.isSell) bearShare += 0.25;
+                    if (st.isWhale) {
+                        if (st.buyPct > st.sellPct) bullShare += 0.15;
+                        else bearShare += 0.15;
+                    }
+
+                    weightedBullScore += bullShare * weight;
+                    weightedBearScore += bearShare * weight;
                 }
             });
 
             if (stInfo && stInfo.currentTrend) {
-                if (stInfo.currentTrend === 1) bullPoints += 30;
-                else bearPoints += 30;
+                if (stInfo.currentTrend === 1) weightedBullScore += 0.20;
+                else if (stInfo.currentTrend === -1) weightedBearScore += 0.20;
             }
 
-            const totalScore = bullPoints + bearPoints;
-            let prob = 50;
-            let dir = "NEUTRAL";
-            let confidence = "MEDIA";
+            const totalWeighted = weightedBullScore + weightedBearScore;
+            let rawProb = 50;
+            let directionText = "NEUTRAL";
 
-            if (totalScore > 0) {
-                if (bullPoints >= bearPoints) {
-                    prob = Math.min(95, Math.round(50 + (bullPoints / totalScore) * 45));
-                    dir = "BUY (COMPRA)";
+            if (totalWeighted > 0) {
+                if (weightedBullScore >= weightedBearScore) {
+                    rawProb = Math.round((weightedBullScore / totalWeighted) * 100);
+                    directionText = "BUY (COMPRA)";
                 } else {
-                    prob = Math.min(95, Math.round(50 + (bearPoints / totalScore) * 45));
-                    dir = "SELL (VENTA)";
+                    rawProb = Math.round((weightedBearScore / totalWeighted) * 100);
+                    directionText = "SELL (VENTA)";
                 }
             }
 
-            if (prob > 75) confidence = "ALTA";
-            else if (prob < 60) confidence = "BAJA";
+            rawProb = Math.max(51, Math.min(96, rawProb));
 
-            aiProbText.innerText = `${prob}%`;
-            aiProbBar.style.width = `${prob}%`;
-            aiConfidence.innerText = `CONF: ${confidence}`;
+            let confText = "MEDIA";
+            if (rawProb >= 80) confText = "ALTA";
+            else if (rawProb <= 62) confText = "BAJA";
 
-            if (dir.includes("BUY")) {
-                aiDirection.innerText = dir;
+            aiProbText.innerText = `${rawProb}%`;
+            aiProbBar.style.width = `${rawProb}%`;
+            aiConfidence.innerText = `CONF: ${confText}`;
+
+            if (directionText.includes("BUY")) {
+                aiDirection.innerText = directionText;
                 aiDirection.className = "txt-green";
                 aiProbText.className = "txt-green";
                 aiProbBar.style.backgroundColor = "#00e676";
-            } else if (dir.includes("SELL")) {
-                aiDirection.innerText = dir;
+            } else if (directionText.includes("SELL")) {
+                aiDirection.innerText = directionText;
                 aiDirection.className = "txt-red";
                 aiProbText.className = "txt-red";
                 aiProbBar.style.backgroundColor = "#ff1744";
             } else {
-                aiDirection.innerText = dir;
+                aiDirection.innerText = directionText;
                 aiDirection.className = "txt-yellow";
                 aiProbText.className = "txt-yellow";
                 aiProbBar.style.backgroundColor = "#ffd700";
@@ -715,7 +731,7 @@
                     dashStPrice.innerText = `$${stInfo.lastSignal.price.toFixed(2)}`;
                 }
 
-                updateAIDashboard(stInfo);
+                updateOriginalAIDashboard(stInfo);
 
                 statusEl.innerText = "Conectado ✓";
                 drawOverlay();
