@@ -320,6 +320,10 @@
                     <span>Precio Entrada:</span>
                     <span id="dash-st-price" style="font-weight:bold;">--</span>
                 </div>
+                <div class="config-row">
+                    <span>Estado Mercado:</span>
+                    <span id="dash-market-regime" class="txt-yellow">--</span>
+                </div>
             </div>
 
             <div id="panel-vsa-mtf" class="vsa-table-container">
@@ -394,6 +398,7 @@
 
         const dashStSignal = document.getElementById("dash-st-signal");
         const dashStPrice = document.getElementById("dash-st-price");
+        const dashMarketRegime = document.getElementById("dash-market-regime");
         const stFilterStatus = document.getElementById("st-filter-status");
 
         const aiConfidence = document.getElementById("ai-confidence");
@@ -444,6 +449,49 @@
         resizeObserver.observe(chartContainer);
 
         chart.timeScale().subscribeVisibleLogicalRangeChange(() => drawOverlay());
+
+        // ALGORITMO DETECTOR DE RANGO / FUERZA TENDENCIAL (ADX)
+        function calculateADX(candles, period = 14) {
+            if (!candles || candles.length < period * 2) return 0;
+            
+            let trs = [], pdms = [], ndms = [];
+            for (let i = 1; i < candles.length; i++) {
+                let up = candles[i].high - candles[i - 1].high;
+                let down = candles[i - 1].low - candles[i].low;
+                
+                pdms.push(up > down && up > 0 ? up : 0);
+                ndms.push(down > up && down > 0 ? down : 0);
+                
+                let tr = Math.max(
+                    candles[i].high - candles[i].low,
+                    Math.abs(candles[i].high - candles[i - 1].close),
+                    Math.abs(candles[i].low - candles[i - 1].close)
+                );
+                trs.push(tr);
+            }
+
+            let trSmoothed = trs.slice(0, period).reduce((a, b) => a + b, 0);
+            let pdmSmoothed = pdms.slice(0, period).reduce((a, b) => a + b, 0);
+            let ndmSmoothed = ndms.slice(0, period).reduce((a, b) => a + b, 0);
+
+            let dxArray = [];
+            for (let i = period; i < trs.length; i++) {
+                trSmoothed = trSmoothed - (trSmoothed / period) + trs[i];
+                pdmSmoothed = pdmSmoothed - (pdmSmoothed / period) + pdms[i];
+                ndmSmoothed = ndmSmoothed - (ndmSmoothed / period) + ndms[i];
+
+                let pdi = trSmoothed === 0 ? 0 : (pdmSmoothed / trSmoothed) * 100;
+                let ndi = trSmoothed === 0 ? 0 : (ndmSmoothed / trSmoothed) * 100;
+                
+                let diff = Math.abs(pdi - ndi);
+                let sum = pdi + ndi;
+                let dx = sum === 0 ? 0 : (diff / sum) * 100;
+                dxArray.push(dx);
+            }
+
+            if (dxArray.length < period) return 0;
+            return dxArray.slice(-period).reduce((a, b) => a + b, 0) / period;
+        }
 
         function analyzeVSAData(candles, period, factor, isMTF = false) {
             if (!candles || candles.length < period + 1) return { events: [], lastSupport: null, lastResistance: null, lastState: null };
@@ -539,6 +587,18 @@
             const is1HBear = h1Data && h1Data.lastState && h1Data.lastState.isSell;
             const is1HBull = h1Data && h1Data.lastState && h1Data.lastState.isBuy;
 
+            // Detección de Rango vía ADX
+            const adxVal = calculateADX(candles, 14);
+            const isInRange = adxVal < 20;
+
+            if (isInRange) {
+                dashMarketRegime.innerText = "RANGO / LATERAL";
+                dashMarketRegime.className = "txt-yellow";
+            } else {
+                dashMarketRegime.innerText = "TENDENCIA CLARA";
+                dashMarketRegime.className = "txt-green";
+            }
+
             for (let i = 1; i < len - 1; i++) {
                 const closePx = candles[i].close;
                 let blockedByResistance = false;
@@ -552,6 +612,9 @@
                             if (line.label.includes("Sop") && closePx > line.price) blockedBySupport = true;
                         }
                     });
+
+                    // Bloqueo estricto si el mercado está en rango
+                    if (isInRange) continue;
                 }
 
                 if (trend[i] === 1 && trend[i - 1] === -1) {
@@ -582,7 +645,6 @@
             return { stMarkers, lastSignal, currentTrend: trend[len - 1] };
         }
 
-        // LÓGICA DE PREDICCIÓN CON HORIZONTES DE 15M Y 1H
         function calculatePredictionForHorizon(tfWeights, stInfo) {
             let weightedBullScore = 0;
             let weightedBearScore = 0;
@@ -632,29 +694,12 @@
         }
 
         function updateAIDashboard(stInfo) {
-            // Pesos para horizonte a Corto Plazo (15 Minutos)
-            const weights15m = { 
-                '1m': 0.15, 
-                '3m': 0.25, 
-                '5m': 0.30, 
-                '15m': 0.20, 
-                '30m': 0.05, 
-                '1h': 0.05 
-            };
-
-            // Pesos para horizonte a Mediano Plazo (1 Hora)
-            const weights1h = { 
-                '15m': 0.15, 
-                '30m': 0.25, 
-                '1h': 0.35, 
-                '4h': 0.15, 
-                '1d': 0.10 
-            };
+            const weights15m = { '1m': 0.15, '3m': 0.25, '5m': 0.30, '15m': 0.20, '30m': 0.05, '1h': 0.05 };
+            const weights1h = { '15m': 0.15, '30m': 0.25, '1h': 0.35, '4h': 0.15, '1d': 0.10 };
 
             const pred15m = calculatePredictionForHorizon(weights15m, stInfo);
             const pred1h = calculatePredictionForHorizon(weights1h, stInfo);
 
-            // Renderizar 15M
             aiProbText15m.innerText = `${pred15m.prob}%`;
             aiProbBar15m.style.width = `${pred15m.prob}%`;
             aiDir15m.innerText = pred15m.direction;
@@ -673,7 +718,6 @@
                 aiProbBar15m.style.backgroundColor = "#ffd700";
             }
 
-            // Renderizar 1H
             aiProbText1h.innerText = `${pred1h.prob}%`;
             aiProbBar1h.style.width = `${pred1h.prob}%`;
             aiDir1h.innerText = pred1h.direction;
@@ -692,14 +736,12 @@
                 aiProbBar1h.style.backgroundColor = "#ffd700";
             }
 
-            // Confianza general estimada
             const avgProb = Math.round((pred15m.prob + pred1h.prob) / 2);
             let confText = "MEDIA";
             if (avgProb >= 78) confText = "ALTA";
             else if (avgProb <= 60) confText = "BAJA";
             aiConfidence.innerText = `CONF: ${confText}`;
 
-            // Factores HTF, VSA y ST
             const d1Data = mtfVsaCache['1d'] ? mtfVsaCache['1d'].lastState : null;
             const h4Data = mtfVsaCache['4h'] ? mtfVsaCache['4h'].lastState : null;
 
