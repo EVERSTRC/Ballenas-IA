@@ -236,9 +236,9 @@
         <div class="controls-right">
             <button id="btn-supertrend" class="btn-toggle">Supertrend</button>
             <button id="btn-filter" class="btn-toggle active-filter">Filtro ST: ON</button>
-            <button id="btn-vsa" class="btn-toggle">VPVR</button>
-            <button id="btn-signals" class="btn-toggle">S/R VSA</button>
-            <button id="btn-vpvr" class="btn-toggle">Señales VSA</button>
+            <button id="btn-vsa" class="btn-toggle">S/R VSA</button>
+            <button id="btn-signals" class="btn-toggle">Señales VSA</button>
+            <button id="btn-vpvr" class="btn-toggle">VPVR</button>
             <button id="btn-panel" class="btn-toggle">AI Panel</button>
         </div>
     </header>
@@ -333,7 +333,7 @@
         </div>
     </div>
 
-    <!-- LOGICA SCRIPT COMPLETA -->
+    <!-- LOGICA SCRIPT CON RESILIENCIA A RED -->
     <script>
     document.addEventListener("DOMContentLoaded", function () {
         const TELEGRAM_CONFIG = { enabled: true, username: "ERC1670" };
@@ -430,6 +430,27 @@
                 .catch(err => console.error("Error Telegram:", err));
         }
 
+        // FUNCIÓN CON FALLBACK PARA EVITAR ERRORES CORS / BINANCE RESTRICTIONS
+        async function fetchKlinesWithFallback(symbol, interval, limit) {
+            const endpoints = [
+                `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
+                `https://api.binance.us/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
+                `https://corsproxy.io/?https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+            ];
+
+            for (let url of endpoints) {
+                try {
+                    const res = await fetch(url);
+                    if (res.ok) {
+                        return await res.json();
+                    }
+                } catch (err) {
+                    console.warn(`Fallo endpoint ${url}, intentando siguiente...`);
+                }
+            }
+            throw new Error("No se pudo conectar a ningún servidor de datos.");
+        }
+
         const chart = LightweightCharts.createChart(chartContainer, {
             width: chartContainer.clientWidth,
             height: chartContainer.clientHeight,
@@ -446,7 +467,6 @@
         function collectAllVSALines() {
             let lines = [];
             
-            // COLOR SOPORTE NEÓN VIBRANTE (#00ff66)
             const localAnalysis = analyzeVSAData(currentCandleData, periodoVol, factorVol);
             if (localAnalysis.lastResistance) {
                 lines.push({ 
@@ -830,7 +850,6 @@
             document.getElementById("setup-rr").innerText = `1 : ${rr}`;
         }
 
-        /* DIBUJO REAL EN CANVAS: MARGEN Y COLOR CORREGIDOS */
         function drawOverlay() {
             const width = chartContainer.clientWidth;
             const height = chartContainer.clientHeight;
@@ -877,10 +896,8 @@
                         }
                     }
 
-                    // MARGEN CORREGIDO A width - 75
                     const xEnd = width - 75; 
                     
-                    // 1. Dibuja línea horizontal
                     ctx.beginPath();
                     ctx.strokeStyle = item.color;
                     ctx.lineWidth = item.label.includes("4H") || item.label.includes("1D") ? 3 : 2;
@@ -889,7 +906,6 @@
                     ctx.lineTo(xEnd, y);
                     ctx.stroke();
 
-                    // 2. Dibuja la etiqueta/badge
                     ctx.font = "bold 10px -apple-system, BlinkMacSystemFont, Roboto, sans-serif";
                     const textWidth = ctx.measureText(item.label).width;
                     const paddingX = 6;
@@ -907,7 +923,6 @@
                     }
                     ctx.fill();
 
-                    // 3. Texto dentro del badge
                     ctx.fillStyle = (item.color === '#00ff66' || item.color === '#00c853') ? "#000000" : "#ffffff";
                     ctx.textAlign = "center";
                     ctx.textBaseline = "middle";
@@ -945,8 +960,8 @@
         async function fetchHistory(tf) {
             try {
                 updateStatus("Cargando...", "#ffd700", "rgba(255, 215, 0, 0.15)");
-                const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${tf}&limit=300`);
-                const data = await response.json();
+                
+                const data = await fetchKlinesWithFallback('BTCUSDT', tf, 300);
                 
                 currentCandleData = data.map(d => ({
                     time: d[0] / 1000,
@@ -959,18 +974,22 @@
 
                 candlestickSeries.setData(currentCandleData);
 
-                await fetchMTFVsaData();
-                collectAllVSALines();
+                // Carga MTF de forma asíncrona sin bloquear la app
+                fetchMTFVsaData().then(() => {
+                    collectAllVSALines();
+                    refreshSupertrendDisplay();
+                    runPredictionEngine();
+                    drawOverlay();
+                });
 
                 calculateVPVR();
                 refreshSupertrendDisplay();
-                runPredictionEngine();
                 drawOverlay();
 
                 updateStatus("LIVE", "#00e676", "rgba(0, 230, 118, 0.15)");
             } catch (err) {
                 console.error("Fetch history error:", err);
-                updateStatus("Error Carga", "#ff1744", "rgba(255, 23, 68, 0.15)");
+                updateStatus("Error Red", "#ff1744", "rgba(255, 23, 68, 0.15)");
             }
         }
 
@@ -978,8 +997,7 @@
             const tfs = ['5m', '15m', '1h', '4h', '1d'];
             for (let tf of tfs) {
                 try {
-                    const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${tf}&limit=100`);
-                    const data = await res.json();
+                    const data = await fetchKlinesWithFallback('BTCUSDT', tf, 100);
                     const candles = data.map(d => ({
                         time: d[0] / 1000,
                         open: parseFloat(d[1]),
