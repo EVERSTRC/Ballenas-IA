@@ -1,1142 +1,443 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bitcoin Trading Terminal - VPVR VSA AI</title>
-    
-    <!-- Lightweight Charts Library -->
-    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
-
-    <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            user-select: none;
-        }
-
-        body {
-            background-color: #000000;
-            color: #d1d4dc;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        /* BARRA SUPERIOR */
-        header {
-            height: 48px;
-            background-color: #0c0d10;
-            border-bottom: 1px solid #1e222d;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 12px;
-            z-index: 10;
-        }
-
-        .controls-left, .controls-right {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .status-pill {
-            font-size: 11px;
-            font-weight: bold;
-            padding: 3px 8px;
-            border-radius: 4px;
-            border: 1px solid #00e676;
-            color: #00e676;
-            background: rgba(0, 230, 118, 0.15);
-        }
-
-        select, button {
-            background-color: #1e222d;
-            color: #d1d4dc;
-            border: 1px solid #2a2e39;
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-size: 12px;
-            cursor: pointer;
-            outline: none;
-            transition: all 0.2s ease;
-        }
-
-        select:hover, button:hover {
-            background-color: #2a2e39;
-            border-color: #434651;
-        }
-
-        .btn-toggle {
-            background-color: #2962ff;
-            color: #ffffff;
-            border: none;
-            font-weight: 600;
-        }
-
-        .btn-toggle.inactive {
-            background-color: #1e222d;
-            color: #787b86;
-        }
-
-        .active-filter {
-            background-color: #ff9800 !important;
-            color: #000 !important;
-        }
-
-        /* CONTENEDOR PRINCIPAL */
-        #main-container {
-            flex: 1;
-            position: relative;
-            width: 100%;
-            height: calc(100vh - 48px);
-        }
-
-        #chart {
-            width: 100%;
-            height: 100%;
-            position: absolute;
-            top: 0;
-            left: 0;
-            z-index: 1;
-        }
-
-        #labels-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 2;
-            pointer-events: none;
-        }
-
-        /* DASHBOARD FLOTANTE (PANEL AI) */
-        #dashboard {
-            position: absolute;
-            top: 12px;
-            left: 12px;
-            z-index: 3;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            width: 260px;
-            pointer-events: none;
-        }
-
-        .panel-box {
-            background-color: rgba(12, 13, 16, 0.85);
-            border: 1px solid #1e222d;
-            backdrop-filter: blur(8px);
-            border-radius: 6px;
-            padding: 10px;
-            pointer-events: auto;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-        }
-
-        .panel-title {
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #787b86;
-            margin-bottom: 6px;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        /* CONTENIDO DE PANELES */
-        .predict-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 4px;
-            text-align: center;
-        }
-
-        .predict-item {
-            background: rgba(255,255,255,0.03);
-            padding: 4px;
-            border-radius: 4px;
-            border: 1px solid rgba(255,255,255,0.05);
-        }
-
-        .predict-tf { font-size: 10px; color: #787b86; }
-        .predict-val { font-size: 12px; font-weight: bold; margin: 2px 0; }
-        .predict-prob { font-size: 9px; color: #a3a6af; }
-
-        .setup-row {
-            display: flex;
-            justify-content: space-between;
-            font-size: 11px;
-            margin-bottom: 3px;
-        }
-
-        .setup-row span:first-child { color: #787b86; }
-        .setup-row span:last-child { font-weight: 600; }
-
-        .txt-green { color: #00e676 !important; }
-        .txt-red { color: #ff1744 !important; }
-        .txt-yellow { color: #ffd700 !important; }
-
-        /* TABLA VSA MTF */
-        .vsa-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 10px;
-            text-align: right;
-        }
-
-        .vsa-table th, .vsa-table td {
-            padding: 3px 2px;
-        }
-
-        .vsa-table th {
-            color: #787b86;
-            font-weight: normal;
-            border-bottom: 1px solid #1e222d;
-        }
-
-        .vsa-table tr td:first-child { text-align: left; font-weight: bold; }
-
-        .badge-buy { background: #00e676; color: #000; padding: 1px 4px; border-radius: 2px; font-weight: bold; }
-        .badge-sell { background: #ff1744; color: #fff; padding: 1px 4px; border-radius: 2px; font-weight: bold; }
-        .badge-neu { background: #434651; color: #fff; padding: 1px 4px; border-radius: 2px; }
-
-        .config-input {
-            width: 45px;
-            background: #1e222d;
-            border: 1px solid #2a2e39;
-            color: #fff;
-            font-size: 10px;
-            text-align: center;
-            border-radius: 2px;
-        }
-    </style>
-</head>
-<body>
-
-    <!-- BARRA DE HERRAMIENTAS -->
-    <header>
-        <div class="controls-left">
-            <span id="status" class="status-pill">CONECTANDO...</span>
-            <span style="font-size: 12px; font-weight: bold; color: #fff;">TF:</span>
-            <select id="timeframe">
-                <option value="1m">1M</option>
-                <option value="5m" selected>5M</option>
-                <option value="15m">15M</option>
-                <option value="1h">1H</option>
-                <option value="4h">4H</option>
-            </select>
-        </div>
-
-        <div class="controls-right">
-            <button id="btn-supertrend" class="btn-toggle">Supertrend</button>
-            <button id="btn-filter" class="btn-toggle active-filter">Filtro ST: ON</button>
-            <button id="btn-vsa" class="btn-toggle">S/R VSA</button>
-            <button id="btn-signals" class="btn-toggle">Señales VSA</button>
-            <button id="btn-vpvr" class="btn-toggle">VPVR</button>
-            <button id="btn-panel" class="btn-toggle">AI Panel</button>
-        </div>
-    </header>
-
-    <!-- ÁREA DE GRÁFICO Y OVERLAY -->
-    <div id="main-container">
-        <div id="chart"></div>
-        <canvas id="labels-overlay"></canvas>
-
-        <!-- DASHBOARD FLOTANTE AI -->
-        <div id="dashboard">
-            <!-- PREDICCIÓN ALGORÍTMICA -->
-            <div class="panel-box">
-                <div class="panel-title">
-                    <span>PROYECCIÓN ALGORÍTMICA AI</span>
-                    <span style="color:#00e676;">LIVE</span>
-                </div>
-                <div class="predict-grid">
-                    <div class="predict-item">
-                        <div class="predict-tf">15M</div>
-                        <div id="p-15m" class="predict-val txt-green">--</div>
-                        <div id="prob-15m" class="predict-prob">--%</div>
-                    </div>
-                    <div class="predict-item">
-                        <div class="predict-tf">1H</div>
-                        <div id="p-1h" class="predict-val txt-red">--</div>
-                        <div id="prob-1h" class="predict-prob">--%</div>
-                    </div>
-                    <div class="predict-item">
-                        <div class="predict-tf">4H</div>
-                        <div id="p-4h" class="predict-val txt-red">--</div>
-                        <div id="prob-4h" class="predict-prob">--%</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- TRADE SETUP -->
-            <div class="panel-box">
-                <div class="panel-title">
-                    <span>GUÍA DE DECISIONES</span>
-                </div>
-                <div style="font-size: 10px; margin-bottom: 6px;">
-                    <span id="st-filter-status" style="color: #ff9800; font-weight: bold;">[FILTRO ACTIVO]</span>
-                </div>
-                <div class="setup-row">
-                    <span>Señal Actual:</span>
-                    <span id="dash-st-signal" class="txt-yellow">--</span>
-                </div>
-                <div class="setup-row">
-                    <span>Precio Entrada:</span>
-                    <span id="dash-st-price">$0.00</span>
-                </div>
-                <hr style="border: 0; border-top: 1px solid #1e222d; margin: 6px 0;">
-                <div class="panel-title">TRADE SETUP <span id="setup-type" class="txt-yellow">NEUTRO</span></div>
-                <div class="setup-row"><span>Entrada (LIMIT):</span><span id="setup-entry">--</span></div>
-                <div class="setup-row"><span>Stop Loss:</span><span id="setup-sl" class="txt-red">--</span></div>
-                <div class="setup-row"><span>Take Profit 1:</span><span id="setup-tp1" class="txt-green">--</span></div>
-                <div class="setup-row"><span>Take Profit 2:</span><span id="setup-tp2" class="txt-green">--</span></div>
-                <div class="setup-row"><span>POC:</span><span id="setup-poc">--</span></div>
-                <div class="setup-row"><span>Riesgo/Beneficio:</span><span id="setup-rr">--</span></div>
-            </div>
-
-            <!-- PANEL VSA MULTI-TIMEFRAME -->
-            <div class="panel-box">
-                <table class="vsa-table">
-                    <thead>
-                        <tr>
-                            <th>TF</th>
-                            <th>VSA</th>
-                            <th>Volumen</th>
-                            <th>% Compra</th>
-                            <th>% Venta</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr id="row-5m"><td>5m</td><td>--</td><td>--</td><td>--</td><td>--</td></tr>
-                        <tr id="row-15m"><td>15m</td><td>--</td><td>--</td><td>--</td><td>--</td></tr>
-                        <tr id="row-1h"><td>1h</td><td>--</td><td>--</td><td>--</td><td>--</td></tr>
-                        <tr id="row-4h"><td>4h</td><td>--</td><td>--</td><td>--</td><td>--</td></tr>
-                        <tr id="row-1d"><td>1d</td><td>--</td><td>--</td><td>--</td><td>--</td></tr>
-                    </tbody>
-                </table>
-                <hr style="border: 0; border-top: 1px solid #1e222d; margin: 6px 0;">
-                <div style="display: flex; justify-content: space-between; font-size: 10px; color: #787b86; align-items: center;">
-                    <span>CONFIG. VSA</span>
-                    <div>
-                        Prom: <input type="number" id="input-period" class="config-input" value="20">
-                        Mult: <input type="number" id="input-factor" class="config-input" step="0.1" value="1.8">
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- LOGICA SCRIPT CON RESILIENCIA A RED -->
-    <script>
-    document.addEventListener("DOMContentLoaded", function () {
-        const TELEGRAM_CONFIG = { enabled: true, username: "ERC1670" };
-
-        let showSupertrend = true;
-        let useFilter = true;
-        let showVsaLines = true;
-        let showVsaSignals = true;
-        let showVPVR = true;
-
-        let periodoVol = 20;
-        let factorVol = 1.8;
-
-        let currentCandleData = [];
-        let mtfVsaCache = {};
-        let vsaLinesToDraw = [];
-        
-        let vpvrData = { buckets: [], pocPrice: null, maxVol: 0 };
-        
-        let lastNotifiedSignalTime = null;
-        let lastNotifiedSignalType = null;
-        let audioCtx = null;
-
-        let ws = null;
-        let pingInterval = null;
-        let reconnectTimeout = null;
-        let currentTF = "5m";
-
-        const statusEl = document.getElementById("status");
-        const timeframeSelect = document.getElementById("timeframe");
-        const chartContainer = document.getElementById("chart");
-        const overlay = document.getElementById("labels-overlay");
-        const ctx = overlay.getContext("2d");
-
-        const btnSupertrend = document.getElementById("btn-supertrend");
-        const btnFilter = document.getElementById("btn-filter");
-        const btnVsa = document.getElementById("btn-vsa");
-        const btnSignals = document.getElementById("btn-signals");
-        const btnVpvr = document.getElementById("btn-vpvr");
-        const btnPanel = document.getElementById("btn-panel");
-        const dashboard = document.getElementById("dashboard");
-
-        const dashStSignal = document.getElementById("dash-st-signal");
-        const dashStPrice = document.getElementById("dash-st-price");
-        const stFilterStatus = document.getElementById("st-filter-status");
-
-        const inputPeriod = document.getElementById("input-period");
-        const inputFactor = document.getElementById("input-factor");
-
-        function initAudioContext() {
-            if (!audioCtx) {
-                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-                if (AudioContextClass) audioCtx = new AudioContextClass();
-            }
-            if (audioCtx && audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
-        }
-        document.addEventListener('click', initAudioContext, { once: true });
-
-        function playBeepSound(type) {
-            try {
-                initAudioContext();
-                if (!audioCtx) return;
-
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.connect(gain);
-                gain.connect(audioCtx.destination);
-                if (type === "BUY") {
-                    osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.3);
-                } else {
-                    osc.frequency.setValueAtTime(600, audioCtx.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.3);
-                }
-                gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-                osc.start(audioCtx.currentTime);
-                osc.stop(audioCtx.currentTime + 0.3);
-            } catch (e) {
-                console.warn("Audio error:", e);
-            }
-        }
-
-        function sendTelegramAlert(signalType, price, timeframe) {
-            if (!TELEGRAM_CONFIG.enabled || !TELEGRAM_CONFIG.username) return;
-            const icon = signalType === "BUY" ? "🟢🚀" : "🔴🐻";
-            
-            const message = `ALERT SUPERTREND BTCUSDT\n\nSeñal: ${signalType} ${icon}\nPrecio Entrada: $${price.toFixed(2)}\nTimeframe: ${timeframe}`;
-            const userClean = TELEGRAM_CONFIG.username.replace("@", "");
-            const encodedMsg = encodeURIComponent(message);
-            fetch(`https://api.callmebot.com/text.php?user=@${userClean}&text=${encodedMsg}`, { mode: 'no-cors' })
-                .catch(err => console.error("Error Telegram:", err));
-        }
-
-        // FUNCIÓN CON FALLBACK PARA EVITAR ERRORES CORS / BINANCE RESTRICTIONS
-        async function fetchKlinesWithFallback(symbol, interval, limit) {
-            const endpoints = [
-                `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
-                `https://api.binance.us/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
-                `https://corsproxy.io/?https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
-            ];
-
-            for (let url of endpoints) {
-                try {
-                    const res = await fetch(url);
-                    if (res.ok) {
-                        return await res.json();
-                    }
-                } catch (err) {
-                    console.warn(`Fallo endpoint ${url}, intentando siguiente...`);
-                }
-            }
-            throw new Error("No se pudo conectar a ningún servidor de datos.");
-        }
-
-        const chart = LightweightCharts.createChart(chartContainer, {
-            width: chartContainer.clientWidth,
-            height: chartContainer.clientHeight,
-            layout: { background: { type: 'solid', color: '#000000' }, textColor: '#d1d4dc' },
-            grid: { vertLines: { color: '#161923' }, horzLines: { color: '#161923' } },
-            timeScale: { borderColor: '#2a2e39', timeVisible: true, secondsVisible: false, rightOffset: 15 },
-            rightPriceScale: { borderColor: '#2a2e39', autoScale: true }
-        });
-
-        const candlestickSeries = chart.addCandlestickSeries({
-            upColor: '#089981', downColor: '#f23645', borderVisible: false, wickUpColor: '#089981', wickDownColor: '#f23645'
-        });
-
-        function collectAllVSALines() {
-            let lines = [];
-            
-            const localAnalysis = analyzeVSAData(currentCandleData, periodoVol, factorVol);
-            if (localAnalysis.lastResistance) {
-                lines.push({ 
-                    price: localAnalysis.lastResistance.price, 
-                    time: localAnalysis.lastResistance.time,
-                    label: "Res Chart", 
-                    type: 'SELL', 
-                    color: '#ff0055' 
-                });
-            }
-            if (localAnalysis.lastSupport) {
-                lines.push({ 
-                    price: localAnalysis.lastSupport.price, 
-                    time: localAnalysis.lastSupport.time,
-                    label: "Sop Chart", 
-                    type: 'BUY', 
-                    color: '#00ff66' 
-                });
-            }
-
-            const tfs = ['5m', '15m', '1h', '4h', '1d'];
-            const labelsMap = { '5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D' };
-            const colorsMap = {
-                '5m': { res: '#ff0055', sop: '#00ff66' },
-                '15m': { res: '#ff0055', sop: '#00ff66' },
-                '1h': { res: '#ff0055', sop: '#00c853' },
-                '4h': { res: '#d000ff', sop: '#d000ff' },
-                '1d': { res: '#ffaa00', sop: '#ffaa00' }
-            };
-
-            tfs.forEach(tf => {
-                const cache = mtfVsaCache[tf];
-                if (cache) {
-                    const labelTF = labelsMap[tf] || tf;
-                    const cScheme = colorsMap[tf] || { res: '#ff0055', sop: '#00ff66' };
-
-                    if (cache.lastResistance) {
-                        lines.push({ 
-                            price: cache.lastResistance.price, 
-                            time: cache.lastResistance.time,
-                            label: `Res ${labelTF}`, 
-                            type: 'SELL', 
-                            color: cScheme.res 
-                        });
-                    }
-                    if (cache.lastSupport) {
-                        lines.push({ 
-                            price: cache.lastSupport.price, 
-                            time: cache.lastSupport.time,
-                            label: `Sop ${labelTF}`, 
-                            type: 'BUY', 
-                            color: cScheme.sop 
-                        });
-                    }
-                }
-            });
-
-            vsaLinesToDraw = lines;
-        }
-
-        function getSupertrendMarkers(candles, atrPeriods = 14, multiplier = 2.0) {
-            if (!candles || candles.length < atrPeriods + 2) return { stMarkers: [], lastSignal: null };
-            const len = candles.length;
-            const tr = new Float64Array(len);
-            tr[0] = candles[0].high - candles[0].low;
-
-            for (let i = 1; i < len; i++) {
-                tr[i] = Math.max(
-                    candles[i].high - candles[i].low,
-                    Math.abs(candles[i].high - candles[i - 1].close),
-                    Math.abs(candles[i].low - candles[i - 1].close)
-                );
-            }
-
-            const atr = new Float64Array(len);
-            let sumTR = 0;
-            for (let i = 0; i < atrPeriods; i++) sumTR += tr[i];
-            atr[atrPeriods - 1] = sumTR / atrPeriods;
-            for (let i = atrPeriods; i < len; i++) atr[i] = (atr[i - 1] * (atrPeriods - 1) + tr[i]) / atrPeriods;
-
-            const up = new Float64Array(len), dn = new Float64Array(len), trend = new Int32Array(len);
-            let currentTrend = 1;
-
-            for (let i = 0; i < len; i++) {
-                const src = (candles[i].high + candles[i].low) / 2;
-                let basicUp = src - (multiplier * atr[i]), basicDn = src + (multiplier * atr[i]);
-
-                if (i === 0) { up[i] = basicUp; dn[i] = basicDn; trend[i] = 1; continue; }
-
-                up[i] = candles[i - 1].close > up[i - 1] ? Math.max(basicUp, up[i - 1]) : basicUp;
-                dn[i] = candles[i - 1].close < dn[i - 1] ? Math.min(basicDn, dn[i - 1]) : basicDn;
-
-                if (trend[i - 1] === -1 && candles[i].close > dn[i - 1]) currentTrend = 1;
-                else if (trend[i - 1] === 1 && candles[i].close < up[i - 1]) currentTrend = -1;
-                else currentTrend = trend[i - 1];
-
-                trend[i] = currentTrend;
-            }
-
-            const stMarkers = [];
-            let lastSignal = null;
-
-            const h1Data = mtfVsaCache['1h'];
-            const is1HBear = h1Data && h1Data.lastState && h1Data.lastState.isSell;
-            const is1HBull = h1Data && h1Data.lastState && h1Data.lastState.isBuy;
-
-            for (let i = 1; i < len - 1; i++) {
-                const closePx = candles[i].close;
-
-                let blockedByResistance = false;
-                let blockedBySupport = false;
-
-                if (useFilter) {
-                    vsaLinesToDraw.forEach(line => {
-                        const distPct = Math.abs(closePx - line.price) / closePx;
-                        if (distPct < 0.0020) {
-                            if (line.type === 'SELL' && closePx < line.price) blockedByResistance = true;
-                            if (line.type === 'BUY' && closePx > line.price) blockedBySupport = true;
-                        }
-                    });
-
-                    if (vpvrData.pocPrice) {
-                        const pocDist = Math.abs(closePx - vpvrData.pocPrice) / closePx;
-                        if (pocDist < 0.0015) {
-                            if (closePx < vpvrData.pocPrice) blockedByResistance = true;
-                            if (closePx > vpvrData.pocPrice) blockedBySupport = true;
-                        }
-                    }
-                }
-
-                if (trend[i] === 1 && trend[i - 1] === -1) {
-                    if (!useFilter || (!blockedByResistance && !is1HBear)) {
-                        stMarkers.push({ time: candles[i].time, position: 'belowBar', color: '#00e676', shape: 'arrowUp', text: 'ST BUY' });
-                        lastSignal = { type: 'BUY', price: closePx, time: candles[i].time };
-                    }
-                } else if (trend[i] === -1 && trend[i - 1] === 1) {
-                    if (!useFilter || (!blockedBySupport && !is1HBull)) {
-                        stMarkers.push({ time: candles[i].time, position: 'aboveBar', color: '#ff1744', shape: 'arrowDown', text: 'ST SELL' });
-                        lastSignal = { type: 'SELL', price: closePx, time: candles[i].time };
-                    }
-                }
-            }
-
-            if (showVsaSignals) {
-                const vsaAn = analyzeVSAData(candles, periodoVol, factorVol);
-                vsaAn.events.forEach(ev => {
-                    if (ev.type === 'BUY') {
-                        stMarkers.push({ time: ev.time, position: 'belowBar', color: '#00e676', shape: 'arrowUp', text: 'BUY' });
-                    } else if (ev.type === 'SELL') {
-                        stMarkers.push({ time: ev.time, position: 'aboveBar', color: '#ff1744', shape: 'arrowDown', text: 'SELL' });
-                    }
-                });
-                stMarkers.sort((a, b) => a.time - b.time);
-            }
-
-            return { stMarkers, lastSignal };
-        }
-
-        function updateStatus(text, color, bgColor) {
-            statusEl.innerText = text;
-            statusEl.style.color = color;
-            statusEl.style.borderColor = color;
-            statusEl.style.backgroundColor = bgColor;
-        }
-
-        function resizeCanvas() {
-            const width = chartContainer.clientWidth;
-            const height = chartContainer.clientHeight;
-
-            overlay.width = width;
-            overlay.height = height;
-            overlay.style.width = width + "px";
-            overlay.style.height = height + "px";
-
-            drawOverlay();
-        }
-
-        const resizeObserver = new ResizeObserver(entries => {
-            if (!entries || entries.length === 0) return;
-            const { width, height } = entries[0].contentRect;
-            chart.applyOptions({ width, height });
-            resizeCanvas();
-        });
-        resizeObserver.observe(chartContainer);
-
-        chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
-            calculateVPVR();
-            drawOverlay();
-        });
-
-        function analyzeVSAData(candles, period, factor, isMTF = false) {
-            if (!candles || candles.length < period + 1) return { events: [], lastSupport: null, lastResistance: null, lastState: null };
-
-            const targetCandles = isMTF ? candles.slice(0, -1) : candles;
-
-            let events = [];
-            let lastSupport = null;
-            let lastResistance = null;
-            let lastState = null;
-
-            for (let i = period; i < targetCandles.length; i++) {
-                let sumVol = 0;
-                for (let j = i - period; j < i; j++) {
-                    sumVol += targetCandles[j].volume;
-                }
-                const avgVol = sumVol / period;
-                const candle = targetCandles[i];
-
-                const range = candle.high - candle.low;
-                const effVol = (candle.volume === 0 || isNaN(candle.volume)) ? 1.0 : candle.volume;
-                const isWhale = effVol > (avgVol * factor);
-
-                const volBuy = range === 0 ? effVol / 2 : effVol * ((candle.close - candle.low) / range);
-                const volSell = effVol - volBuy;
-                const deltaNet = volBuy - volSell;
-
-                const mInf = Math.min(candle.open, candle.close) - candle.low;
-                const mSup = candle.high - Math.max(candle.open, candle.close);
-
-                const isBuy = isWhale && (deltaNet > 0 || mInf > (range * 0.35));
-                const isSell = isWhale && (deltaNet < 0 || mSup > (range * 0.35));
-
-                if (isBuy) {
-                    const ev = { index: i, time: candle.time, type: 'BUY', price: candle.low, vol: effVol };
-                    events.push(ev);
-                    lastSupport = ev;
-                } else if (isSell) {
-                    const ev = { index: i, time: candle.time, type: 'SELL', price: candle.high, vol: effVol };
-                    events.push(ev);
-                    lastResistance = ev;
-                }
-
-                if (i === targetCandles.length - 1) {
-                    const lastEvent = events.length > 0 ? events[events.length - 1] : null;
-                    lastState = {
-                        isBuy: lastEvent ? lastEvent.type === 'BUY' : false,
-                        isSell: lastEvent ? lastEvent.type === 'SELL' : false,
-                        volume: effVol,
-                        pctBuy: ((volBuy / effVol) * 100).toFixed(1),
-                        pctSell: ((volSell / effVol) * 100).toFixed(1)
-                    };
-                }
-            }
-
-            return { events, lastSupport, lastResistance, lastState };
-        }
-
-        function calculateVPVR() {
-            if (!showVPVR || currentCandleData.length === 0) return;
-
-            const range = chart.timeScale().getVisibleLogicalRange();
-            if (!range) return;
-
-            const startIdx = Math.max(0, Math.floor(range.from));
-            const endIdx = Math.min(currentCandleData.length - 1, Math.ceil(range.to));
-
-            if (startIdx >= endIdx) return;
-
-            const visibleCandles = currentCandleData.slice(startIdx, endIdx + 1);
-
-            let minPrice = Infinity;
-            let maxPrice = -Infinity;
-
-            visibleCandles.forEach(c => {
-                if (c.low < minPrice) minPrice = c.low;
-                if (c.high > maxPrice) maxPrice = c.high;
-            });
-
-            if (minPrice === Infinity || maxPrice === -Infinity) return;
-
-            const numBuckets = 40;
-            const bucketSize = (maxPrice - minPrice) / numBuckets;
-            let buckets = new Array(numBuckets).fill(0);
-
-            visibleCandles.forEach(c => {
-                const midPrice = (c.high + c.low) / 2;
-                let bIdx = Math.floor((midPrice - minPrice) / bucketSize);
-                if (bIdx >= numBuckets) bIdx = numBuckets - 1;
-                if (bIdx < 0) bIdx = 0;
-                buckets[bIdx] += c.volume;
-            });
-
-            let maxVol = 0;
-            let pocIdx = 0;
-
-            buckets.forEach((v, idx) => {
-                if (v > maxVol) {
-                    maxVol = v;
-                    pocIdx = idx;
-                }
-            });
-
-            const pocPrice = minPrice + (pocIdx * bucketSize) + (bucketSize / 2);
-
-            vpvrData = {
-                buckets: buckets.map((vol, idx) => ({
-                    priceLow: minPrice + (idx * bucketSize),
-                    priceHigh: minPrice + ((idx + 1) * bucketSize),
-                    volume: vol
-                })),
-                pocPrice: pocPrice,
-                maxVol: maxVol
-            };
-
-            const elPoc = document.getElementById("setup-poc");
-            if (elPoc) elPoc.innerText = pocPrice.toFixed(2);
-        }
-
-        function runPredictionEngine() {
-            if (currentCandleData.length === 0) return;
-
-            const currentPrice = currentCandleData[currentCandleData.length - 1].close;
-            const tfs = ['15m', '1h', '4h'];
-            let predictions = {};
-
-            let totalBias = 0;
-            let activeSupports = [];
-            let activeResistances = [];
-
-            tfs.forEach(tf => {
-                const cache = mtfVsaCache[tf];
-                if (!cache) return;
-
-                if (cache.lastSupport) activeSupports.push(cache.lastSupport.price);
-                if (cache.lastResistance) activeResistances.push(cache.lastResistance.price);
-
-                let tfBias = 0;
-                if (cache.lastState) {
-                    if (cache.lastState.isBuy) tfBias += 1;
-                    if (cache.lastState.isSell) tfBias -= 1;
-                }
-                totalBias += tfBias;
-
-                const prob = Math.min(95, Math.max(50, 60 + (tfBias * 15)));
-                predictions[tf] = {
-                    dir: tfBias > 0 ? "BULL" : tfBias < 0 ? "BEAR" : "NEUT",
-                    prob: prob
-                };
-            });
-
-            ['15m', '1h', '4h'].forEach(tf => {
-                const elVal = document.getElementById(`p-${tf}`);
-                const elProb = document.getElementById(`prob-${tf}`);
-                if (predictions[tf]) {
-                    elVal.innerText = predictions[tf].dir;
-                    elVal.className = `predict-val ${predictions[tf].dir === 'BULL' ? 'txt-green' : predictions[tf].dir === 'BEAR' ? 'txt-red' : 'txt-yellow'}`;
-                    elProb.innerText = `${predictions[tf].prob}%`;
-                }
-            });
-
-            let setupType = "NEUTRO";
-            let entry = currentPrice;
-            let sl = currentPrice * 0.99;
-            let tp1 = currentPrice * 1.015;
-            let tp2 = currentPrice * 1.03;
-
-            if (totalBias > 0 && activeSupports.length > 0) {
-                setupType = "LONG (COMPRA)";
-                entry = Math.max(...activeSupports);
-                sl = entry * 0.992;
-                tp1 = entry + (entry - sl) * 2;
-                tp2 = entry + (entry - sl) * 3.5;
-            } else if (totalBias < 0 && activeResistances.length > 0) {
-                setupType = "SHORT (VENTA)";
-                entry = Math.min(...activeResistances);
-                sl = entry * 1.008;
-                tp1 = entry - (sl - entry) * 2;
-                tp2 = entry - (sl - entry) * 3.5;
-            }
-
-            document.getElementById("setup-type").innerText = setupType;
-            document.getElementById("setup-type").className = setupType.includes("LONG") ? "txt-green" : setupType.includes("SHORT") ? "txt-red" : "txt-yellow";
-            document.getElementById("setup-entry").innerText = entry ? entry.toFixed(2) : "--";
-            document.getElementById("setup-sl").innerText = sl ? sl.toFixed(2) : "--";
-            document.getElementById("setup-tp1").innerText = tp1 ? tp1.toFixed(2) : "--";
-            document.getElementById("setup-tp2").innerText = tp2 ? tp2.toFixed(2) : "--";
-            
-            const risk = Math.abs(entry - sl);
-            const reward = Math.abs(tp1 - entry);
-            const rr = risk > 0 ? (reward / risk).toFixed(1) : "--";
-            document.getElementById("setup-rr").innerText = `1 : ${rr}`;
-        }
-
-        function drawOverlay() {
-            const width = chartContainer.clientWidth;
-            const height = chartContainer.clientHeight;
-            ctx.clearRect(0, 0, width, height);
-
-            if (showVPVR && vpvrData.buckets.length > 0) {
-                const maxBarWidth = width * 0.15;
-                vpvrData.buckets.forEach(b => {
-                    const yTop = candlestickSeries.priceToCoordinate(b.priceHigh);
-                    const yBottom = candlestickSeries.priceToCoordinate(b.priceLow);
-                    if (yTop !== null && yBottom !== null) {
-                        const h = Math.max(1, Math.abs(yBottom - yTop));
-                        const w = (b.volume / vpvrData.maxVol) * maxBarWidth;
-                        ctx.fillStyle = "rgba(41, 98, 255, 0.22)";
-                        ctx.fillRect(width - w, Math.min(yTop, yBottom), w, h);
-                    }
-                });
-
-                if (vpvrData.pocPrice) {
-                    const yPoc = candlestickSeries.priceToCoordinate(vpvrData.pocPrice);
-                    if (yPoc !== null) {
-                        ctx.strokeStyle = "#e040fb";
-                        ctx.lineWidth = 1.5;
-                        ctx.setLineDash([4, 4]);
-                        ctx.beginPath();
-                        ctx.moveTo(0, yPoc);
-                        ctx.lineTo(width, yPoc);
-                        ctx.stroke();
-                        ctx.setLineDash([]);
-                    }
-                }
-            }
-
-            if (showVsaLines && vsaLinesToDraw.length > 0) {
-                vsaLinesToDraw.forEach(item => {
-                    const y = candlestickSeries.priceToCoordinate(item.price);
-                    if (y === null || y < 0 || y > height) return;
-
-                    let xStart = 0;
-                    if (item.time) {
-                        const calculatedX = chart.timeScale().timeToCoordinate(item.time);
-                        if (calculatedX !== null) {
-                            xStart = Math.max(0, calculatedX);
-                        }
-                    }
-
-                    const xEnd = width - 75; 
-                    
-                    ctx.beginPath();
-                    ctx.strokeStyle = item.color;
-                    ctx.lineWidth = item.label.includes("4H") || item.label.includes("1D") ? 3 : 2;
-                    ctx.setLineDash([]);
-                    ctx.moveTo(xStart, y);
-                    ctx.lineTo(xEnd, y);
-                    ctx.stroke();
-
-                    ctx.font = "bold 10px -apple-system, BlinkMacSystemFont, Roboto, sans-serif";
-                    const textWidth = ctx.measureText(item.label).width;
-                    const paddingX = 6;
-                    const badgeWidth = textWidth + (paddingX * 2);
-                    const badgeHeight = 16;
-                    const badgeX = xEnd - badgeWidth;
-                    const badgeY = y - (badgeHeight / 2);
-
-                    ctx.fillStyle = item.color;
-                    ctx.beginPath();
-                    if (ctx.roundRect) {
-                        ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 3);
-                    } else {
-                        ctx.rect(badgeX, badgeY, badgeWidth, badgeHeight);
-                    }
-                    ctx.fill();
-
-                    ctx.fillStyle = (item.color === '#00ff66' || item.color === '#00c853') ? "#000000" : "#ffffff";
-                    ctx.textAlign = "center";
-                    ctx.textBaseline = "middle";
-                    ctx.fillText(item.label, badgeX + (badgeWidth / 2), y);
-                });
-            }
-        }
-
-        function refreshSupertrendDisplay() {
-            const { stMarkers, lastSignal } = getSupertrendMarkers(currentCandleData);
-            if (showSupertrend || showVsaSignals) {
-                candlestickSeries.setMarkers(stMarkers);
-            } else {
-                candlestickSeries.setMarkers([]);
-            }
-
-            if (lastSignal) {
-                dashStSignal.innerText = lastSignal.type;
-                dashStSignal.className = lastSignal.type === 'BUY' ? 'txt-green' : 'txt-red';
-                dashStPrice.innerText = `$${lastSignal.price.toFixed(2)}`;
-
-                if (lastSignal.time !== lastNotifiedSignalTime || lastSignal.type !== lastNotifiedSignalType) {
-                    lastNotifiedSignalTime = lastSignal.time;
-                    lastNotifiedSignalType = lastSignal.type;
-                    playBeepSound(lastSignal.type);
-                    sendTelegramAlert(lastSignal.type, lastSignal.price, currentTF);
-                }
-            } else {
-                dashStSignal.innerText = "SIN SEÑAL";
-                dashStSignal.className = "txt-yellow";
-                dashStPrice.innerText = "--";
-            }
-        }
-
-        async function fetchHistory(tf) {
-            try {
-                updateStatus("Cargando...", "#ffd700", "rgba(255, 215, 0, 0.15)");
-                
-                const data = await fetchKlinesWithFallback('BTCUSDT', tf, 300);
-                
-                currentCandleData = data.map(d => ({
-                    time: d[0] / 1000,
-                    open: parseFloat(d[1]),
-                    high: parseFloat(d[2]),
-                    low: parseFloat(d[3]),
-                    close: parseFloat(d[4]),
-                    volume: parseFloat(d[5])
-                }));
-
-                candlestickSeries.setData(currentCandleData);
-
-                // Carga MTF de forma asíncrona sin bloquear la app
-                fetchMTFVsaData().then(() => {
-                    collectAllVSALines();
-                    refreshSupertrendDisplay();
-                    runPredictionEngine();
-                    drawOverlay();
-                });
-
-                calculateVPVR();
-                refreshSupertrendDisplay();
-                drawOverlay();
-
-                updateStatus("LIVE", "#00e676", "rgba(0, 230, 118, 0.15)");
-            } catch (err) {
-                console.error("Fetch history error:", err);
-                updateStatus("Error Red", "#ff1744", "rgba(255, 23, 68, 0.15)");
-            }
-        }
-
-        async function fetchMTFVsaData() {
-            const tfs = ['5m', '15m', '1h', '4h', '1d'];
-            for (let tf of tfs) {
-                try {
-                    const data = await fetchKlinesWithFallback('BTCUSDT', tf, 100);
-                    const candles = data.map(d => ({
-                        time: d[0] / 1000,
-                        open: parseFloat(d[1]),
-                        high: parseFloat(d[2]),
-                        low: parseFloat(d[3]),
-                        close: parseFloat(d[4]),
-                        volume: parseFloat(d[5])
-                    }));
-                    
-                    const analysis = analyzeVSAData(candles, periodoVol, factorVol, true);
-                    mtfVsaCache[tf] = analysis;
-                    
-                    const row = document.getElementById(`row-${tf}`);
-                    if (row && analysis.lastState) {
-                        const st = analysis.lastState;
-                        const badge = st.isBuy ? '<span class="badge-buy">BUY</span>' : st.isSell ? '<span class="badge-sell">SELL</span>' : '<span class="badge-neu">NEU</span>';
-                        row.cells[1].innerHTML = badge;
-                        row.cells[2].innerText = Math.round(st.volume);
-                        row.cells[3].innerText = `${st.pctBuy}%`;
-                        row.cells[4].innerText = `${st.pctSell}%`;
-                    }
-                } catch (e) {
-                    console.warn(`Error MTF VSA ${tf}:`, e);
-                }
-            }
-        }
-
-        function connectWebSocket() {
-            if (ws) ws.close();
-            
-            const wsUrl = `wss://stream.binance.com:9443/ws/btcusdt@kline_${currentTF}`;
-            ws = new WebSocket(wsUrl);
-
-            ws.onopen = () => {
-                updateStatus("LIVE", "#00e676", "rgba(0, 230, 118, 0.15)");
-                pingInterval = setInterval(() => ws.send(JSON.stringify({ method: "PING" })), 180000);
-            };
-
-            ws.onmessage = (evt) => {
-                const msg = JSON.parse(evt.data);
-                if (!msg.k) return;
-
-                const k = msg.k;
-                const candle = {
-                    time: k.t / 1000,
-                    open: parseFloat(k.o),
-                    high: parseFloat(k.h),
-                    low: parseFloat(k.l),
-                    close: parseFloat(k.c),
-                    volume: parseFloat(k.v)
-                };
-
-                const lastIdx = currentCandleData.length - 1;
-                if (lastIdx >= 0 && currentCandleData[lastIdx].time === candle.time) {
-                    currentCandleData[lastIdx] = candle;
-                } else {
-                    currentCandleData.push(candle);
-                }
-
-                candlestickSeries.update(candle);
-                calculateVPVR();
-
-                refreshSupertrendDisplay();
-                runPredictionEngine();
-                drawOverlay();
-            };
-
-            ws.onerror = () => updateStatus("WS Error", "#ff1744", "rgba(255, 23, 68, 0.15)");
-            ws.onclose = () => {
-                clearInterval(pingInterval);
-                reconnectTimeout = setTimeout(connectWebSocket, 5000);
-            };
-        }
-
-        btnSupertrend.addEventListener("click", () => {
-            showSupertrend = !showSupertrend;
-            btnSupertrend.classList.toggle("inactive", !showSupertrend);
-            refreshSupertrendDisplay();
-        });
-
-        btnFilter.addEventListener("click", () => {
-            useFilter = !useFilter;
-            if (useFilter) {
-                btnFilter.innerText = "Filtro ST: ON";
-                btnFilter.className = "btn-toggle active-filter";
-                stFilterStatus.innerText = "[FILTRO ACTIVO]";
-                stFilterStatus.style.color = "#ff9800";
-            } else {
-                btnFilter.innerText = "Filtro ST: OFF";
-                btnFilter.className = "btn-toggle inactive";
-                stFilterStatus.innerText = "[FILTRO DESACTIVADO]";
-                stFilterStatus.style.color = "#787b86";
-            }
-            refreshSupertrendDisplay();
-        });
-
-        btnVsa.addEventListener("click", () => {
-            showVsaLines = !showVsaLines;
-            btnVsa.classList.toggle("inactive", !showVsaLines);
-            drawOverlay();
-        });
-
-        btnSignals.addEventListener("click", () => {
-            showVsaSignals = !showVsaSignals;
-            btnSignals.classList.toggle("inactive", !showVsaSignals);
-            refreshSupertrendDisplay();
-        });
-
-        btnVpvr.addEventListener("click", () => {
-            showVPVR = !showVPVR;
-            btnVpvr.classList.toggle("inactive", !showVPVR);
-            drawOverlay();
-        });
-
-        btnPanel.addEventListener("click", () => {
-            const isHidden = dashboard.style.display === "none";
-            dashboard.style.display = isHidden ? "flex" : "none";
-            btnPanel.classList.toggle("inactive", !isHidden);
-        });
-
-        timeframeSelect.addEventListener("change", (e) => {
-            currentTF = e.target.value;
-            fetchHistory(currentTF);
-            connectWebSocket();
-        });
-
-        inputPeriod.addEventListener("change", (e) => {
-            periodoVol = parseInt(e.target.value) || 20;
-            fetchHistory(currentTF);
-        });
-
-        inputFactor.addEventListener("change", (e) => {
-            factorVol = parseFloat(e.target.value) || 1.8;
-            fetchHistory(currentTF);
-        });
-
-        fetchHistory(currentTF);
-        connectWebSocket();
-    });
-    </script>
-</body>
-</html>
+//+------------------------------------------------------------------+
+//|                                         TradingTerminalPanel.mq5 |
+//|                                  Copyright 2026, Tu Nombre       |
+//+------------------------------------------------------------------+
+#property copyright "Trading Terminal AI"
+#property indicator_chart_window
+#property indicator_plots 0
+
+//--- Parámetros de entrada
+input group "=== Configuración Panel ==="
+input int      InpPanelWidth  = 260;         // Ancho del panel (px)
+input color    InpBgColor     = C'19,23,34';   // Color Fondo Panel
+input color    InpBorderColor = C'41,98,255';  // Color Borde Principal
+input color    InpTextColor   = C'209,212,220';// Color Texto
+
+input group "=== Configuración Supertrend ==="
+input int      InpSTPeriod    = 10;          // Período ATR Supertrend
+input double   InpSTMultiplier= 3.0;         // Multiplicador Supertrend
+input color    InpSTBuyColor  = C'0,230,118';  // Color Flecha / Señal BUY
+input color    InpSTSellColor = C'255,23,68';  // Color Flecha / Señal SELL
+
+input group "=== Configuración VPVR ==="
+input bool     InpShowVPVR    = true;        // Mostrar VPVR
+input int      InpVPVRBars    = 150;         // Velas para calcular VPVR
+input int      InpVPVRLevels  = 30;          // Filas del Histograma
+input color    InpVPVRColor   = C'41,98,255';  // Color Barras VPVR
+input color    InpPOCColor    = C'224,64,251'; // Color Línea POC
+
+input group "=== Configuración Trade Setup ==="
+input bool     InpShowSetup   = true;        // Mostrar Niveles Entry/SL/TP
+input double   InpRiskReward  = 1.5;         // Ratio Riesgo/Beneficio
+
+input group "=== Configuración VSA ==="
+input int      InpVSAPeriod   = 20;          // Período Promedio Volumen
+input double   InpVSAFactor   = 1.8;         // Multiplicador Ballena
+
+//--- Variables Globales
+int      panelX = 10;
+int      panelY = 10;
+string   prefix = "TTP_";
+
+//+------------------------------------------------------------------+
+//| Custom indicator initialization function                         |
+//+------------------------------------------------------------------+
+int OnInit()
+  {
+   ChartSetInteger(0, CHART_SHIFT, true);
+   ChartSetDouble(0, CHART_SHIFT_SIZE, 15.0); // 15% de margen a la derecha
+   
+   CreateDashboardUI();
+   UpdateDashboardData();
+
+   return(INIT_SUCCEEDED);
+  }
+
+//+------------------------------------------------------------------+
+//| Custom indicator deinitialization function                       |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+  {
+   ObjectsDeleteAll(0, prefix);
+   ChartRedraw(0);
+  }
+
+//+------------------------------------------------------------------+
+//| Custom indicator iteration function                              |
+//+------------------------------------------------------------------+
+int OnCalculate(const int rates_total,
+                const int prev_calculated,
+                const datetime &time[],
+                const double &open[],
+                const double &high[],
+                const double &low[],
+                const double &close[],
+                const long &tick_volume[],
+                const long &volume[],
+                const int &spread[])
+  {
+   UpdateDashboardData();
+   CalculateSupertrendSignals();
+   
+   if(InpShowVPVR) DrawVPVR();
+   if(InpShowSetup) DrawTradeSetup();
+   
+   return(rates_total);
+  }
+
+//+------------------------------------------------------------------+
+//| MÓDULO SUPERTREND & FLECHAS EN GRÁFICO                           |
+//+------------------------------------------------------------------+
+void CalculateSupertrendSignals()
+  {
+   int lookback = 200;
+   MqlRates rates[];
+   ArraySetAsSeries(rates, true);
+   if(CopyRates(_Symbol, _Period, 0, lookback, rates) < lookback) return;
+
+   double stLine[], trend[];
+   ArrayResize(stLine, lookback);
+   ArrayResize(trend, lookback);
+   ArrayInitialize(stLine, 0.0);
+   ArrayInitialize(trend, 1.0); // 1 = Bullish, -1 = Bearish
+
+   // Algoritmo Supertrend
+   for(int i = lookback - InpSTPeriod - 1; i >= 0; i--)
+     {
+      double atr = 0;
+      for(int k = 0; k < InpSTPeriod; k++) atr += (rates[i + k].high - rates[i + k].low);
+      atr /= InpSTPeriod;
+
+      double median = (rates[i].high + rates[i].low) / 2.0;
+      double upBand   = median + (InpSTMultiplier * atr);
+      double dnBand   = median - (InpSTMultiplier * atr);
+
+      double prevSt   = stLine[i + 1];
+      double prevTrend= trend[i + 1];
+
+      if(prevTrend == 1)
+        {
+         stLine[i] = MathMax(dnBand, prevSt);
+         if(rates[i].close < stLine[i])
+           {
+            trend[i] = -1;
+            stLine[i] = upBand;
+           }
+         else trend[i] = 1;
+        }
+      else
+        {
+         stLine[i] = MathMin(upBand, prevSt);
+         if(rates[i].close > stLine[i])
+           {
+            trend[i] = 1;
+            stLine[i] = dnBand;
+           }
+         else trend[i] = -1;
+        }
+
+      // Detectar Cambio de Tendencia (Señales ST BUY / ST SELL)
+      if(trend[i] != trend[i + 1])
+        {
+         string arrowName = prefix + "ST_ARR_" + TimeToString(rates[i].time);
+         
+         if(trend[i] == 1) // Nueva Señal Alcista
+           {
+            CreateArrow(arrowName, rates[i].time, rates[i].low - (atr * 0.5), 233, InpSTBuyColor, "ST BUY");
+           }
+         else // Nueva Señal Bajista
+           {
+            CreateArrow(arrowName, rates[i].time, rates[i].high + (atr * 0.5), 234, InpSTSellColor, "ST SELL");
+           }
+        }
+     }
+
+   // Actualizar Estado Supertrend en el Panel Izquierdo
+   string currSignal = (trend[0] == 1) ? "BUY" : "SELL";
+   color  currColor  = (trend[0] == 1) ? InpSTBuyColor : InpSTSellColor;
+
+   ObjectSetString(0, prefix + "ST_Signal", OBJPROP_TEXT, currSignal);
+   ObjectSetInteger(0, prefix + "ST_Signal", OBJPROP_COLOR, currColor);
+   ObjectSetString(0, prefix + "ST_Price", OBJPROP_TEXT, DoubleToString(stLine[0], _Digits));
+  }
+
+void CreateArrow(string name, datetime time, double price, int arrowCode, color arrowCol, string text)
+  {
+   if(ObjectFind(0, name) < 0)
+     {
+      ObjectCreate(0, name, OBJ_ARROW, 0, time, price);
+      ObjectSetInteger(0, name, OBJPROP_ARROWCODE, arrowCode);
+      ObjectSetInteger(0, name, OBJPROP_COLOR, arrowCol);
+      ObjectSetInteger(0, name, OBJPROP_WIDTH, 2);
+      ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+      ObjectSetString(0, name, OBJPROP_TEXT, text);
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| MÓDULO VPVR (Volume Profile Visible Range)                       |
+//+------------------------------------------------------------------+
+void DrawVPVR()
+  {
+   ObjectsDeleteAll(0, prefix + "VPVR_");
+
+   MqlRates rates[];
+   ArraySetAsSeries(rates, true);
+   int copied = CopyRates(_Symbol, _Period, 0, InpVPVRBars, rates);
+   if(copied < InpVPVRBars) return;
+
+   double maxPrice = -1.0, minPrice = 999999.0;
+   for(int i = 0; i < copied; i++)
+     {
+      if(rates[i].high > maxPrice) maxPrice = rates[i].high;
+      if(rates[i].low < minPrice)  minPrice = rates[i].low;
+     }
+
+   if(maxPrice <= minPrice) return;
+
+   double step = (maxPrice - minPrice) / InpVPVRLevels;
+   double volBucket[];
+   ArrayResize(volBucket, InpVPVRLevels);
+   ArrayInitialize(volBucket, 0.0);
+
+   double maxVol = 0.0;
+   int pocIndex = 0;
+
+   for(int i = 0; i < copied; i++)
+     {
+      double mid = (rates[i].high + rates[i].low) / 2.0;
+      int idx = (int)((mid - minPrice) / step);
+      if(idx >= InpVPVRLevels) idx = InpVPVRLevels - 1;
+      if(idx < 0) idx = 0;
+
+      volBucket[idx] += (double)rates[i].tick_volume;
+      if(volBucket[idx] > maxVol)
+        {
+         maxVol = volBucket[idx];
+         pocIndex = idx;
+        }
+     }
+
+   datetime timeStart = rates[0].time;
+
+   for(int j = 0; j < InpVPVRLevels; j++)
+     {
+      if(volBucket[j] <= 0) continue;
+
+      double pLow  = minPrice + (j * step);
+      double pHigh = pLow + step;
+
+      int barLen = (int)((volBucket[j] / maxVol) * 20.0); 
+      datetime barEnd = timeStart + PeriodSeconds(_Period) * MathMax(barLen, 1);
+
+      string bName = prefix + "VPVR_BAR_" + IntegerToString(j);
+      ObjectCreate(0, bName, OBJ_RECTANGLE, 0, timeStart, pHigh, barEnd, pLow);
+      ObjectSetInteger(0, bName, OBJPROP_COLOR, InpVPVRColor);
+      ObjectSetInteger(0, bName, OBJPROP_FILL, true);
+      ObjectSetInteger(0, bName, OBJPROP_BACK, true);
+      ObjectSetInteger(0, bName, OBJPROP_SELECTABLE, false);
+     }
+
+   double pocPrice = minPrice + (pocIndex * step) + (step / 2.0);
+   string pocName = prefix + "VPVR_POC";
+   ObjectCreate(0, pocName, OBJ_HLINE, 0, 0, pocPrice);
+   ObjectSetInteger(0, pocName, OBJPROP_COLOR, InpPOCColor);
+   ObjectSetInteger(0, pocName, OBJPROP_STYLE, STYLE_DASH);
+   ObjectSetInteger(0, pocName, OBJPROP_WIDTH, 1);
+   ObjectSetInteger(0, pocName, OBJPROP_SELECTABLE, false);
+
+   ObjectSetString(0, prefix + "SETUP_POC", OBJPROP_TEXT, DoubleToString(pocPrice, _Digits));
+  }
+
+//+------------------------------------------------------------------+
+//| MÓDULO TRADE SETUP (ENTRY, SL, TP1, TP2)                         |
+//+------------------------------------------------------------------+
+void DrawTradeSetup()
+  {
+   double closeCurr = iClose(_Symbol, _Period, 0);
+
+   MqlRates rates[];
+   ArraySetAsSeries(rates, true);
+   double atr = 0;
+   
+   if(CopyRates(_Symbol, _Period, 1, 14, rates) >= 14)
+     {
+      double sumRange = 0;
+      for(int i = 0; i < 14; i++) sumRange += (rates[i].high - rates[i].low);
+      atr = sumRange / 14.0;
+     }
+
+   if(atr <= 0) atr = _Point * 100;
+
+   double entry = closeCurr;
+   double sl    = closeCurr - (atr * 1.5);
+   double tp1   = closeCurr + ((entry - sl) * InpRiskReward);
+   double tp2   = closeCurr + ((entry - sl) * (InpRiskReward * 2.0));
+
+   CreateHorizontalLevel(prefix + "LVL_ENTRY", entry, "ENTRY", C'255,215,0');
+   CreateHorizontalLevel(prefix + "LVL_SL",    sl,    "SL",    C'255,23,68');
+   CreateHorizontalLevel(prefix + "LVL_TP1",   tp1,   "TP1",   C'0,230,118');
+   CreateHorizontalLevel(prefix + "LVL_TP2",   tp2,   "TP2",   C'0,230,118');
+
+   ObjectSetString(0, prefix + "SETUP_ENTRY", OBJPROP_TEXT, DoubleToString(entry, _Digits));
+   ObjectSetString(0, prefix + "SETUP_SL",    OBJPROP_TEXT, DoubleToString(sl, _Digits));
+   ObjectSetString(0, prefix + "SETUP_TP1",   OBJPROP_TEXT, DoubleToString(tp1, _Digits));
+   ObjectSetString(0, prefix + "SETUP_TP2",   OBJPROP_TEXT, DoubleToString(tp2, _Digits));
+  }
+
+void CreateHorizontalLevel(string name, double price, string labelText, color lineCol)
+  {
+   if(ObjectFind(0, name) < 0)
+     {
+      ObjectCreate(0, name, OBJ_HLINE, 0, 0, price);
+      ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_DASHDOT);
+      ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+      ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+     }
+   ObjectMove(0, name, 0, 0, price);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, lineCol);
+  }
+
+//+------------------------------------------------------------------+
+//| ESTRUCTURA DE LA INTERFAZ GRÁFICA (UI)                           |
+//+------------------------------------------------------------------+
+void CreateDashboardUI()
+  {
+   int currentY = panelY;
+
+   CreateRectangle(prefix + "BG", panelX, currentY, InpPanelWidth, 480, InpBgColor, InpBorderColor);
+
+   CreateLabel(prefix + "AI_Title", "PROYECCIÓN ALGORÍTMICA AI", panelX + 10, currentY + 10, C'0,229,255', 8, true);
+   CreateLabel(prefix + "AI_Live", "LIVE", panelX + InpPanelWidth - 35, currentY + 10, C'0,230,118', 8, true);
+   
+   currentY += 28;
+
+   int boxW = (InpPanelWidth - 28) / 3;
+   CreateBoxTF("15M", panelX + 8, currentY, boxW, "p_15m");
+   CreateBoxTF("1H", panelX + 12 + boxW, currentY, boxW, "p_1h");
+   CreateBoxTF("4H", panelX + 16 + (boxW*2), currentY, boxW, "p_4h");
+
+   currentY += 50;
+
+   CreateRectangle(prefix + "ST_Box", panelX + 8, currentY, InpPanelWidth - 16, 40, InpBgColor, C'0,230,118');
+   CreateLabel(prefix + "ST_Title", "SUPERTREND", panelX + 14, currentY + 4, C'0,230,118', 7, true);
+   CreateLabel(prefix + "ST_Sig_Lbl", "Señal:", panelX + 14, currentY + 20, InpTextColor, 8);
+   CreateLabel(prefix + "ST_Signal", "CALC...", panelX + 55, currentY + 20, C'255,215,0', 8, true);
+   CreateLabel(prefix + "ST_Price", "--", panelX + 160, currentY + 20, InpTextColor, 8, true);
+
+   currentY += 48;
+
+   CreateRectangle(prefix + "SETUP_Box", panelX + 8, currentY, InpPanelWidth - 16, 110, InpBgColor, C'255,215,0');
+   CreateLabel(prefix + "SETUP_Title", "TRADE SETUP (LONG)", panelX + 14, currentY + 6, C'255,215,0', 8, true);
+
+   CreateSetupRow("Entrada:", "SETUP_ENTRY", panelX + 14, currentY + 24, C'255,215,0');
+   CreateSetupRow("Stop Loss:", "SETUP_SL",    panelX + 14, currentY + 40, C'255,23,68');
+   CreateSetupRow("Take Profit 1:", "SETUP_TP1", panelX + 14, currentY + 56, C'0,230,118');
+   CreateSetupRow("Take Profit 2:", "SETUP_TP2", panelX + 14, currentY + 72, C'0,230,118');
+   CreateSetupRow("POC (VPVR):", "SETUP_POC",   panelX + 14, currentY + 88, C'224,64,251');
+
+   currentY += 118;
+
+   CreateLabel(prefix + "VSA_Title", "ANÁLISIS VSA MULTI-TIMEFRAME", panelX + 8, currentY, C'41,98,255', 8, true);
+   currentY += 16;
+
+   CreateLabel(prefix + "TH_TF", "TF", panelX + 12, currentY, C'120,123,134', 7, true);
+   CreateLabel(prefix + "TH_VSA", "VSA", panelX + 45, currentY, C'120,123,134', 7, true);
+   CreateLabel(prefix + "TH_VOL", "Volumen", panelX + 90, currentY, C'120,123,134', 7, true);
+   CreateLabel(prefix + "TH_BUY", "% Compra", panelX + 175, currentY, C'0,230,118', 7, true);
+
+   currentY += 14;
+
+   string tfNames[4] = {"5m", "15m", "1h", "4h"};
+   for(int i = 0; i < 4; i++)
+     {
+      int rowY = currentY + (i * 16);
+      CreateLabel(prefix + "TD_TF_" + tfNames[i], tfNames[i], panelX + 12, rowY, C'255,255,255', 8, true);
+      CreateLabel(prefix + "TD_VSA_" + tfNames[i], "NEU", panelX + 45, rowY, C'120,123,134', 8, true);
+      CreateLabel(prefix + "TD_VOL_" + tfNames[i], "--", panelX + 90, rowY, InpTextColor, 8);
+      CreateLabel(prefix + "TD_BUY_" + tfNames[i], "--%", panelX + 175, rowY, C'0,230,118', 8);
+     }
+
+   ChartRedraw(0);
+  }
+
+//+------------------------------------------------------------------+
+//| MÉTODOS DE ACTUALIZACIÓN Y FUNCIONES AUXILIARES                  |
+//+------------------------------------------------------------------+
+void UpdateDashboardData()
+  {
+   ENUM_TIMEFRAMES tfs[4] = {PERIOD_M5, PERIOD_M15, PERIOD_H1, PERIOD_H4};
+   string tfNames[4] = {"5m", "15m", "1h", "4h"};
+
+   for(int i = 0; i < 4; i++)
+     {
+      MqlRates rates[];
+      ArraySetAsSeries(rates, true);
+      if(CopyRates(_Symbol, tfs[i], 0, InpVSAPeriod + 1, rates) < InpVSAPeriod) continue;
+
+      double avgVol = 0;
+      for(int j = 1; j <= InpVSAPeriod; j++) avgVol += (double)rates[j].tick_volume;
+      avgVol /= InpVSAPeriod;
+
+      double currentVol = (double)rates[0].tick_volume;
+      double range = rates[0].high - rates[0].low;
+      double buyPct = (range > 0) ? ((rates[0].close - rates[0].low) / range) * 100.0 : 50.0;
+
+      string vsaStatus = "NEU";
+      color vsaColor = C'120,123,134';
+
+      if(currentVol > (avgVol * InpVSAFactor))
+        {
+         if(buyPct > 55.0)      { vsaStatus = "BUY";  vsaColor = C'0,230,118'; }
+         else if(buyPct < 45.0) { vsaStatus = "SELL"; vsaColor = C'255,23,68'; }
+        }
+
+      ObjectSetString(0, prefix + "TD_VSA_" + tfNames[i], OBJPROP_TEXT, vsaStatus);
+      ObjectSetInteger(0, prefix + "TD_VSA_" + tfNames[i], OBJPROP_COLOR, vsaColor);
+      ObjectSetString(0, prefix + "TD_VOL_" + tfNames[i], OBJPROP_TEXT, DoubleToString(currentVol, 0));
+      ObjectSetString(0, prefix + "TD_BUY_" + tfNames[i], OBJPROP_TEXT, DoubleToString(buyPct, 1) + "%");
+     }
+
+   ChartRedraw(0);
+  }
+
+void CreateSetupRow(string lbl, string id, int x, int y, color valCol)
+  {
+   CreateLabel(prefix + "L_" + id, lbl, x, y, InpTextColor, 7);
+   CreateLabel(prefix + id, "--", x + 100, y, valCol, 7, true);
+  }
+
+void CreateRectangle(string name, int x, int y, int w, int h, color bgColor, color borderColor)
+  {
+   ObjectCreate(0, name, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, name, OBJPROP_XSIZE, w);
+   ObjectSetInteger(0, name, OBJPROP_YSIZE, h);
+   ObjectSetInteger(0, name, OBJPROP_BGCOLOR, bgColor);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, borderColor);
+   ObjectSetInteger(0, name, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+  }
+
+void CreateLabel(string name, string text, int x, int y, color txtColor, int fontSize = 8, bool bold = false)
+  {
+   ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetString(0, name, OBJPROP_TEXT, text);
+   ObjectSetString(0, name, OBJPROP_FONT, bold ? "Arial Bold" : "Arial");
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, txtColor);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+  }
+
+void CreateBoxTF(string tfTitle, int x, int y, int w, string id)
+  {
+   CreateRectangle(prefix + "Box_" + id, x, y, w, 40, InpBgColor, C'42,46,57');
+   CreateLabel(prefix + "LblTF_" + id, tfTitle, x + (w/4), y + 4, C'120,123,134', 7);
+   CreateLabel(prefix + "Val_" + id, "BEAR", x + 6, y + 18, C'255,23,68', 8, true);
+  }
+//+------------------------------------------------------------------+  la señal se da en la vela o hasta que cierre 
