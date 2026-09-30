@@ -832,12 +832,12 @@
             cells[4].innerText = `${state.sellPct}%`;
         }
 
-        // CARGA ROBUSTA CON FALLBACK
+        // PETICIÓN DE HISTORIAL GARANTIZADA SIN CORS (data-api.binance.vision + Proxy Fallback)
         async function fetchKlines(symbol, interval, limit = 200) {
             const endpoints = [
+                `https://data-api.binance.vision/api/3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
                 `https://api.binance.com/api/3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
-                `https://api1.binance.com/api/3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
-                `https://api3.binance.com/api/3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+                `https://api.cors.lol/?url=https://api.binance.com/api/3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
             ];
 
             for (const url of endpoints) {
@@ -856,14 +856,13 @@
                         }));
                     }
                 } catch (err) {
-                    console.warn(`Fallback API intentando siguiente endpoint para ${interval}...`);
+                    console.warn(`Reintentando conexión API para timeframe ${interval}...`);
                 }
             }
-            console.error(`Error crítico al obtener klines para ${interval}`);
+            console.error(`Error al cargar datos REST para ${interval}`);
             return [];
         }
 
-        // PETICIÓN PARALELA OPTIMIZADA MULTI-TIMEFRAME
         async function updateMTFData() {
             const tfs = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d'];
             const fetchPromises = tfs.map(tf => fetchKlines("BTCUSDT", tf, 100));
@@ -872,7 +871,7 @@
             
             results.forEach((res, index) => {
                 const tf = tfs[index];
-                if (res.status === 'fulfilled' && res.value.length > 0) {
+                if (res.status === 'fulfilled' && res.value && res.value.length > 0) {
                     const candles = res.value;
                     const vsaRes = analyzeVSAData(candles, periodoVol, factorVol, true);
                     mtfVsaCache[tf] = vsaRes;
@@ -920,7 +919,6 @@
             updateAIDashboard(stInfo);
         }
 
-        // WEBSOCKET RECONEXIÓN AUTOMÁTICA Y STABLE STREAM
         function connectWebSocket(tf) {
             if (ws) {
                 ws.onclose = null;
@@ -974,12 +972,12 @@
                         drawOverlay();
                     }
                 } catch (e) {
-                    console.error("Error parseando mensaje WS:", e);
+                    console.error("Error procesando mensaje WS:", e);
                 }
             };
 
             ws.onerror = (err) => {
-                console.error("Error WebSocket:", err);
+                console.error("Error en WebSocket:", err);
                 statusEl.innerText = "ERROR WS";
                 statusEl.className = "status-badge error";
             };
@@ -994,17 +992,17 @@
         }
 
         async function init() {
-            // 1. Obtener y mostrar el gráfico principal de inmediato
+            // 1. Cargar historial del gráfico principal
             currentCandleData = await fetchKlines("BTCUSDT", currentTF, 300);
             if (currentCandleData.length > 0) {
                 candlestickSeries.setData(currentCandleData);
                 chart.timeScale().fitContent();
             }
             
-            // 2. Conectar WebSocket inmediatamente
+            // 2. Iniciar WebSocket en tiempo real
             connectWebSocket(currentTF);
 
-            // 3. Procesar los timeframes secundarios en segundo plano
+            // 3. Procesar datos multitimeframe
             updateMTFData();
         }
 
