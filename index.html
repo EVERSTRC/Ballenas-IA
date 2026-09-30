@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Bitcoin Trading Terminal - Left Panels Layout</title>
+    <title>Bitcoin Trading Terminal - Real-Time WebSockets</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -58,6 +58,11 @@
             transition: all 0.3s ease;
             white-space: nowrap;
         }
+        .status-badge.connecting {
+            background-color: rgba(255, 215, 0, 0.15);
+            color: #ffd700;
+            border-color: #ffd700;
+        }
 
         .btn-toggle {
             background-color: #2962ff;
@@ -104,7 +109,6 @@
             z-index: 5;
         }
 
-        /* CONTENEDOR UNIFICADO EN EL LADO IZQUIERDO */
         #left-container {
             position: absolute;
             top: 10px;
@@ -119,14 +123,8 @@
             pointer-events: auto;
         }
 
-        /* Ocultar barra de scroll para apariencia más limpia */
-        #left-container::-webkit-scrollbar {
-            width: 4px;
-        }
-        #left-container::-webkit-scrollbar-thumb {
-            background: #2a2e39;
-            border-radius: 2px;
-        }
+        #left-container::-webkit-scrollbar { width: 4px; }
+        #left-container::-webkit-scrollbar-thumb { background: #2a2e39; border-radius: 2px; }
 
         .config-box {
             background-color: rgba(19, 23, 34, 0.92);
@@ -224,7 +222,7 @@
                 <option value="4h">4 Horas</option>
                 <option value="1d">1 Diario</option>
             </select>
-            <div id="status" class="status-badge">Conectado ✓</div>
+            <div id="status" class="status-badge connecting">Conectando...</div>
         </div>
 
         <div class="controls-right">
@@ -242,9 +240,8 @@
             <canvas id="labels-overlay"></canvas>
         </div>
 
-        <!-- AMBOS PANELES EN EL LADO IZQUIERDO -->
         <div id="left-container">
-            <!-- PANEL 1: ANALISIS IA DETALLADO -->
+            <!-- PANEL 1: ANALISIS IA -->
             <div class="config-box ai-card">
                 <div class="config-row">
                     <span class="txt-purple">🧠 MOTOR PREDICTIVO IA</span>
@@ -283,7 +280,7 @@
                 </div>
             </div>
 
-            <!-- PANEL 2: SUPERTREND & VSA MULTI-TIMEFRAME -->
+            <!-- PANEL 2: SUPERTREND & VSA -->
             <div class="config-box" style="border-color: #00e676;">
                 <div class="config-row">
                     <span style="color:#00e676; font-weight:bold;">SUPERTREND</span>
@@ -351,6 +348,7 @@
         let vsaLinesToDraw = [];
 
         let currentTF = "15m";
+        let ws = null; // Instancia del WebSocket
 
         const statusEl = document.getElementById("status");
         const timeframeSelect = document.getElementById("timeframe");
@@ -551,14 +549,7 @@
         }
 
         function updateAIDashboard(stInfo) {
-            const tfWeights = {
-                '1d': 0.35,
-                '4h': 0.25,
-                '1h': 0.20,
-                '15m': 0.12,
-                '5m': 0.08
-            };
-
+            const tfWeights = { '1d': 0.35, '4h': 0.25, '1h': 0.20, '15m': 0.12, '5m': 0.08 };
             let weightedBullScore = 0;
             let weightedBearScore = 0;
 
@@ -756,6 +747,78 @@
             }));
         }
 
+        // CONEXIÓN WEBSOCKET PARA TIEMPO REAL REAL
+        function connectWebSocket(tf) {
+            if (ws) {
+                ws.close();
+            }
+
+            statusEl.innerText = "Conectando...";
+            statusEl.className = "status-badge connecting";
+
+            const wsUrl = `wss://stream.binance.com:9443/ws/btcusdt@kline_${tf}`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                statusEl.innerText = "TIEMPO REAL ✓";
+                statusEl.className = "status-badge";
+            };
+
+            ws.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                if (!message.k) return;
+
+                const k = message.k;
+                const candle = {
+                    time: k.t / 1000,
+                    open: parseFloat(k.o),
+                    high: parseFloat(k.h),
+                    low: parseFloat(k.l),
+                    close: parseFloat(k.c),
+                    volume: parseFloat(k.v)
+                };
+
+                // Actualizar o añadir la vela en el gráfico al instante
+                candlestickSeries.update(candle);
+
+                // Actualizar array local para indicadores
+                if (currentCandleData.length > 0) {
+                    const lastIdx = currentCandleData.length - 1;
+                    if (currentCandleData[lastIdx].time === candle.time) {
+                        currentCandleData[lastIdx] = candle;
+                    } else if (candle.time > currentCandleData[lastIdx].time) {
+                        currentCandleData.push(candle);
+                        currentCandleData.shift();
+                    }
+                }
+
+                // Recalcular Supertrend e indicadores en vivo
+                const stInfo = getSupertrendMarkers(currentCandleData);
+                if (showSupertrend) candlestickSeries.setMarkers(stInfo.stMarkers);
+
+                if (stInfo.lastSignal) {
+                    dashStSignal.innerText = stInfo.lastSignal.type;
+                    dashStSignal.className = stInfo.lastSignal.type === "BUY" ? "txt-green" : "txt-red";
+                    dashStPrice.innerText = `$${stInfo.lastSignal.price.toFixed(2)}`;
+                }
+
+                updateAIDashboard(stInfo);
+                drawOverlay();
+            };
+
+            ws.onerror = () => {
+                statusEl.innerText = "Error WebSocket";
+                statusEl.className = "status-badge connecting";
+            };
+
+            ws.onclose = () => {
+                // Reconectar automáticamente si se interrumpe la conexión
+                setTimeout(() => {
+                    if (statusEl.innerText !== "Cargando...") connectWebSocket(tf);
+                }, 3000);
+            };
+        }
+
         async function updateMTFData() {
             const tfs = ['5m', '15m', '1h', '4h', '1d'];
             for (let tf of tfs) {
@@ -780,6 +843,7 @@
 
         async function loadChartData() {
             statusEl.innerText = "Cargando...";
+            statusEl.className = "status-badge connecting";
             try {
                 currentCandleData = await fetchCandles(currentTF);
                 candlestickSeries.setData(currentCandleData);
@@ -797,11 +861,12 @@
                 }
 
                 updateAIDashboard(stInfo);
-
-                statusEl.innerText = "Conectado ✓";
                 drawOverlay();
+
+                // Conectar al canal de tiempo real
+                connectWebSocket(currentTF);
             } catch (err) {
-                statusEl.innerText = "Error";
+                statusEl.innerText = "Error Cargando";
             }
         }
 
@@ -859,7 +924,7 @@
 
         loadChartData();
         updateMTFData();
-        setInterval(updateMTFData, 60000);
+        setInterval(updateMTFData, 30000); // Actualización de fondo de MTF cada 30s
     });
     </script>
 </body>
