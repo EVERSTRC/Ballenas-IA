@@ -392,12 +392,10 @@
         let currentTF = "15m";
         let ws = null;
 
-        // Historial de Backtesting
         let predictionsHistory = [];
         let totalWins = 0;
         let totalLosses = 0;
 
-        // Audio Context Sintetizado
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         let audioCtx = null;
 
@@ -620,7 +618,6 @@
                     if (i > 0) orderBlocks.push({ top: candle.high, bottom: candle.low, type: 'BEARISH', time: candle.time });
                 }
 
-                // Detección Fair Value Gaps (FVG)
                 if (i >= 2) {
                     const c1 = targetCandles[i - 2];
                     const c3 = targetCandles[i];
@@ -783,9 +780,8 @@
             if (currentCandleData.length < 2) return;
             const currentCandle = currentCandleData[currentCandleData.length - 1];
 
-            // Evaluar predicciones pendientes
             predictionsHistory.forEach(pred => {
-                if (!pred.evaluated && (currentCandle.time - pred.time) >= 900) { // 15 Minutos transcurridos
+                if (!pred.evaluated && (currentCandle.time - pred.time) >= 900) {
                     pred.evaluated = true;
                     if ((pred.direction.includes("BUY") && currentCandle.close > pred.startPrice) ||
                         (pred.direction.includes("SELL") && currentCandle.close < pred.startPrice)) {
@@ -796,7 +792,6 @@
                 }
             });
 
-            // Registrar nueva predicción
             const lastTracked = predictionsHistory[predictionsHistory.length - 1];
             if (!lastTracked || (currentCandle.time - lastTracked.time) >= 900) {
                 predictionsHistory.push({
@@ -893,19 +888,20 @@
             generateAiNarrative(pred15m, divInfo, stInfo);
         }
 
+        // DIBUJADO DE CAPA TRANSPARENTE DE ETIQUETAS Y ZONAS CON ANTI-SOLAPAMIENTO
         function drawOverlay() {
             ctx.clearRect(0, 0, overlay.width, overlay.height);
 
-            // Dibujar Order Blocks y FVGs
+            // 1. Dibujar Order Blocks y Fair Value Gaps
             if (showZones) {
                 orderBlocks.forEach(ob => {
                     const yTop = candlestickSeries.priceToCoordinate(ob.top);
                     const yBottom = candlestickSeries.priceToCoordinate(ob.bottom);
                     if (yTop !== null && yBottom !== null) {
-                        ctx.fillStyle = ob.type === 'BULLISH' ? 'rgba(0, 230, 118, 0.15)' : 'rgba(255, 23, 68, 0.15)';
+                        ctx.fillStyle = ob.type === 'BULLISH' ? 'rgba(0, 230, 118, 0.12)' : 'rgba(255, 23, 68, 0.12)';
                         ctx.fillRect(0, yTop, overlay.width, yBottom - yTop);
                         ctx.fillStyle = ob.type === 'BULLISH' ? '#00e676' : '#ff1744';
-                        ctx.font = '9px sans-serif';
+                        ctx.font = 'bold 9px sans-serif';
                         ctx.fillText(`OB ${ob.type}`, 10, yTop + 10);
                     }
                 });
@@ -917,29 +913,57 @@
                         ctx.fillStyle = 'rgba(255, 215, 0, 0.12)';
                         ctx.fillRect(0, yTop, overlay.width, yBottom - yTop);
                         ctx.fillStyle = '#ffd700';
-                        ctx.font = '9px sans-serif';
-                        ctx.fillText(`FVG Ineficiencia`, 100, yTop + 10);
+                        ctx.font = 'bold 9px sans-serif';
+                        ctx.fillText(`FVG (Vacío)`, 100, yTop + 10);
                     }
                 });
             }
 
-            // Dibujar Líneas S/R VSA
+            // 2. Dibujar Líneas S/R VSA con Algoritmo de Desplazamiento Anti-Colisión
             if (showVsaLines && vsaLinesToDraw.length > 0) {
+                // Mapear líneas a coordenadas Y
+                let mappedLines = [];
                 vsaLinesToDraw.forEach(line => {
                     const y = candlestickSeries.priceToCoordinate(line.price);
                     if (y !== null && y >= 0 && y <= overlay.height) {
-                        ctx.beginPath();
-                        ctx.setLineDash([4, 4]);
-                        ctx.strokeStyle = line.color;
-                        ctx.lineWidth = 1;
-                        ctx.moveTo(0, y);
-                        ctx.lineTo(overlay.width, y);
-                        ctx.stroke();
-
-                        ctx.font = '10px sans-serif';
-                        ctx.fillStyle = line.color;
-                        ctx.fillText(`${line.label}: $${line.price.toFixed(2)}`, overlay.width - 150, y - 4);
+                        mappedLines.push({ ...line, y: y, textY: y });
                     }
+                });
+
+                // Ordenar por coordenada Y
+                mappedLines.sort((a, b) => a.y - b.y);
+
+                // Algoritmo de resolución de colisiones verticales (distancia mínima de 14px)
+                const minDistance = 14;
+                for (let i = 1; i < mappedLines.length; i++) {
+                    if (mappedLines[i].textY - mappedLines[i - 1].textY < minDistance) {
+                        mappedLines[i].textY = mappedLines[i - 1].textY + minDistance;
+                    }
+                }
+
+                // Renderizar líneas y etiquetas
+                mappedLines.forEach(line => {
+                    // Dibujar la línea punteada en la coordenada exacta del precio
+                    ctx.beginPath();
+                    ctx.setLineDash([3, 3]);
+                    ctx.strokeStyle = line.color;
+                    ctx.lineWidth = 1;
+                    ctx.moveTo(0, line.y);
+                    ctx.lineTo(overlay.width, line.y);
+                    ctx.stroke();
+
+                    // Fondo negro sutil para la etiqueta desplazada
+                    const text = `${line.label}: $${line.price.toFixed(2)}`;
+                    ctx.font = 'bold 10px monospace';
+                    const textWidth = ctx.measureText(text).width;
+                    const textX = overlay.width - textWidth - 120;
+
+                    ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+                    ctx.fillRect(textX - 4, line.textY - 10, textWidth + 8, 13);
+
+                    // Texto de la etiqueta VSA
+                    ctx.fillStyle = line.color;
+                    ctx.fillText(text, textX, line.textY - 1);
                 });
             }
         }
@@ -965,8 +989,8 @@
             timeframes.forEach(tf => {
                 const res = mtfVsaCache[tf];
                 if (res) {
-                    if (res.lastSupport) vsaLinesToDraw.push({ price: res.lastSupport.price, color: '#00e676', label: `Soporte VSA (${tf})` });
-                    if (res.lastResistance) vsaLinesToDraw.push({ price: res.lastResistance.price, color: '#ff1744', label: `Resistencia VSA (${tf})` });
+                    if (res.lastSupport) vsaLinesToDraw.push({ price: res.lastSupport.price, color: '#00e676', label: `Soporte (${tf})` });
+                    if (res.lastResistance) vsaLinesToDraw.push({ price: res.lastResistance.price, color: '#ff1744', label: `Resistencia (${tf})` });
                 }
             });
 
@@ -1079,7 +1103,6 @@
                     }
                 }
 
-                // Activar audio en velas ballena
                 const vsaAn = analyzeVSAData(currentCandleData, periodoVol, factorVol);
                 if (vsaAn.lastState && vsaAn.lastState.isWhale) {
                     playSound(vsaAn.lastState.isBuy ? 'buy' : 'sell');
@@ -1100,7 +1123,7 @@
             };
         }
 
-        // Eventos UI Controles
+        // Controles UI
         timeframeSelect.addEventListener("change", (e) => {
             currentTF = e.target.value;
             initChart();
@@ -1155,7 +1178,6 @@
             loadMTFData();
         });
 
-        // Inicialización
         initChart();
     });
     </script>
