@@ -117,7 +117,7 @@
             display: flex;
             flex-direction: column;
             gap: 8px;
-            width: 270px;
+            width: 275px;
             max-height: calc(100% - 20px);
             overflow-y: auto;
             pointer-events: auto;
@@ -190,11 +190,12 @@
 
         .progress-bar-bg {
             width: 100%;
-            height: 6px;
+            height: 5px;
             background-color: #2a2e39;
             border-radius: 3px;
             overflow: hidden;
-            margin-top: 2px;
+            margin-top: 1px;
+            margin-bottom: 3px;
         }
 
         .progress-bar-fill {
@@ -206,7 +207,15 @@
 
         .ai-divider {
             border-top: 1px dashed #363c4e;
-            margin: 2px 0;
+            margin: 3px 0;
+        }
+
+        .pred-box {
+            background: rgba(0, 0, 0, 0.25);
+            padding: 4px 6px;
+            border-radius: 4px;
+            border: 1px solid rgba(224, 64, 251, 0.3);
+            margin-top: 2px;
         }
     </style>
 </head>
@@ -244,27 +253,41 @@
         </div>
 
         <div id="left-container">
-            <!-- PANEL 1: ANALISIS IA -->
+            <!-- PANEL 1: ANALISIS IA Y PREDICCIÓN 15M / 1H -->
             <div class="config-box ai-card">
                 <div class="config-row">
                     <span class="txt-purple">🧠 MOTOR PREDICTIVO IA</span>
                     <span id="ai-confidence" class="txt-yellow" style="font-size: 9px; font-weight: bold;">CONF: --</span>
                 </div>
 
-                <div class="ai-divider"></div>
-
-                <div class="config-row">
-                    <span>Sesgo Predominante:</span>
-                    <span id="ai-direction" class="txt-yellow">ANALIZANDO...</span>
+                <!-- PREDICCION 15 MINUTOS -->
+                <div class="pred-box">
+                    <div class="config-row">
+                        <span style="font-weight: bold; color: #fff;">⏱️ Predicción 15 Min:</span>
+                        <span id="ai-dir-15m" class="txt-yellow">ANALIZANDO...</span>
+                    </div>
+                    <div class="config-row">
+                        <span style="color:#8f96a3;">Probabilidad Éxito:</span>
+                        <span id="ai-prob-text-15m" class="txt-yellow">--%</span>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div id="ai-prob-bar-15m" class="progress-bar-fill"></div>
+                    </div>
                 </div>
-                
-                <div class="config-row">
-                    <span>Probabilidad Éxito:</span>
-                    <span id="ai-prob-text" class="txt-yellow">--%</span>
-                </div>
 
-                <div class="progress-bar-bg">
-                    <div id="ai-prob-bar" class="progress-bar-fill"></div>
+                <!-- PREDICCION 1 HORA -->
+                <div class="pred-box">
+                    <div class="config-row">
+                        <span style="font-weight: bold; color: #fff;">⏳ Predicción 1 Hora:</span>
+                        <span id="ai-dir-1h" class="txt-yellow">ANALIZANDO...</span>
+                    </div>
+                    <div class="config-row">
+                        <span style="color:#8f96a3;">Probabilidad Éxito:</span>
+                        <span id="ai-prob-text-1h" class="txt-yellow">--%</span>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div id="ai-prob-bar-1h" class="progress-bar-fill"></div>
+                    </div>
                 </div>
 
                 <div class="ai-divider"></div>
@@ -374,9 +397,14 @@
         const stFilterStatus = document.getElementById("st-filter-status");
 
         const aiConfidence = document.getElementById("ai-confidence");
-        const aiDirection = document.getElementById("ai-direction");
-        const aiProbText = document.getElementById("ai-prob-text");
-        const aiProbBar = document.getElementById("ai-prob-bar");
+        const aiDir15m = document.getElementById("ai-dir-15m");
+        const aiProbText15m = document.getElementById("ai-prob-text-15m");
+        const aiProbBar15m = document.getElementById("ai-prob-bar-15m");
+
+        const aiDir1h = document.getElementById("ai-dir-1h");
+        const aiProbText1h = document.getElementById("ai-prob-text-1h");
+        const aiProbBar1h = document.getElementById("ai-prob-bar-1h");
+
         const aiFactorHtf = document.getElementById("ai-factor-htf");
         const aiFactorVsa = document.getElementById("ai-factor-vsa");
         const aiFactorSt = document.getElementById("ai-factor-st");
@@ -554,18 +582,8 @@
             return { stMarkers, lastSignal, currentTrend: trend[len - 1] };
         }
 
-        function updateAIDashboard(stInfo) {
-            const tfWeights = { 
-                '1d': 0.30, 
-                '4h': 0.20, 
-                '1h': 0.15, 
-                '30m': 0.12, 
-                '15m': 0.09, 
-                '5m': 0.06, 
-                '3m': 0.05, 
-                '1m': 0.03 
-            };
-            
+        // LÓGICA DE PREDICCIÓN CON HORIZONTES DE 15M Y 1H
+        function calculatePredictionForHorizon(tfWeights, stInfo) {
             let weightedBullScore = 0;
             let weightedBearScore = 0;
 
@@ -578,11 +596,11 @@
                     let bullShare = st.buyPct / 100;
                     let bearShare = st.sellPct / 100;
 
-                    if (st.isBuy) bullShare += 0.25;
-                    if (st.isSell) bearShare += 0.25;
+                    if (st.isBuy) bullShare += 0.30;
+                    if (st.isSell) bearShare += 0.30;
                     if (st.isWhale) {
-                        if (st.buyPct > st.sellPct) bullShare += 0.15;
-                        else bearShare += 0.15;
+                        if (st.buyPct > st.sellPct) bullShare += 0.20;
+                        else bearShare += 0.20;
                     }
 
                     weightedBullScore += bullShare * weight;
@@ -591,34 +609,97 @@
             });
 
             if (stInfo && stInfo.currentTrend) {
-                if (stInfo.currentTrend === 1) weightedBullScore += 0.20;
-                else if (stInfo.currentTrend === -1) weightedBearScore += 0.20;
+                if (stInfo.currentTrend === 1) weightedBullScore += 0.15;
+                else if (stInfo.currentTrend === -1) weightedBearScore += 0.15;
             }
 
-            const totalWeighted = weightedBullScore + weightedBearScore;
-            let rawProb = 50;
-            let directionText = "NEUTRAL";
+            const total = weightedBullScore + weightedBearScore;
+            let prob = 50;
+            let direction = "NEUTRAL";
 
-            if (totalWeighted > 0) {
+            if (total > 0) {
                 if (weightedBullScore >= weightedBearScore) {
-                    rawProb = Math.round((weightedBullScore / totalWeighted) * 100);
-                    directionText = "BUY (COMPRA)";
+                    prob = Math.round((weightedBullScore / total) * 100);
+                    direction = "BUY (COMPRA)";
                 } else {
-                    rawProb = Math.round((weightedBearScore / totalWeighted) * 100);
-                    directionText = "SELL (VENTA)";
+                    prob = Math.round((weightedBearScore / total) * 100);
+                    direction = "SELL (VENTA)";
                 }
             }
 
-            rawProb = Math.max(51, Math.min(96, rawProb));
+            prob = Math.max(52, Math.min(95, prob));
+            return { direction, prob };
+        }
 
+        function updateAIDashboard(stInfo) {
+            // Pesos para horizonte a Corto Plazo (15 Minutos)
+            const weights15m = { 
+                '1m': 0.15, 
+                '3m': 0.25, 
+                '5m': 0.30, 
+                '15m': 0.20, 
+                '30m': 0.05, 
+                '1h': 0.05 
+            };
+
+            // Pesos para horizonte a Mediano Plazo (1 Hora)
+            const weights1h = { 
+                '15m': 0.15, 
+                '30m': 0.25, 
+                '1h': 0.35, 
+                '4h': 0.15, 
+                '1d': 0.10 
+            };
+
+            const pred15m = calculatePredictionForHorizon(weights15m, stInfo);
+            const pred1h = calculatePredictionForHorizon(weights1h, stInfo);
+
+            // Renderizar 15M
+            aiProbText15m.innerText = `${pred15m.prob}%`;
+            aiProbBar15m.style.width = `${pred15m.prob}%`;
+            aiDir15m.innerText = pred15m.direction;
+            
+            if (pred15m.direction.includes("BUY")) {
+                aiDir15m.className = "txt-green";
+                aiProbText15m.className = "txt-green";
+                aiProbBar15m.style.backgroundColor = "#00e676";
+            } else if (pred15m.direction.includes("SELL")) {
+                aiDir15m.className = "txt-red";
+                aiProbText15m.className = "txt-red";
+                aiProbBar15m.style.backgroundColor = "#ff1744";
+            } else {
+                aiDir15m.className = "txt-yellow";
+                aiProbText15m.className = "txt-yellow";
+                aiProbBar15m.style.backgroundColor = "#ffd700";
+            }
+
+            // Renderizar 1H
+            aiProbText1h.innerText = `${pred1h.prob}%`;
+            aiProbBar1h.style.width = `${pred1h.prob}%`;
+            aiDir1h.innerText = pred1h.direction;
+
+            if (pred1h.direction.includes("BUY")) {
+                aiDir1h.className = "txt-green";
+                aiProbText1h.className = "txt-green";
+                aiProbBar1h.style.backgroundColor = "#00e676";
+            } else if (pred1h.direction.includes("SELL")) {
+                aiDir1h.className = "txt-red";
+                aiProbText1h.className = "txt-red";
+                aiProbBar1h.style.backgroundColor = "#ff1744";
+            } else {
+                aiDir1h.className = "txt-yellow";
+                aiProbText1h.className = "txt-yellow";
+                aiProbBar1h.style.backgroundColor = "#ffd700";
+            }
+
+            // Confianza general estimada
+            const avgProb = Math.round((pred15m.prob + pred1h.prob) / 2);
             let confText = "MEDIA";
-            if (rawProb >= 80) confText = "ALTA";
-            else if (rawProb <= 62) confText = "BAJA";
-
-            aiProbText.innerText = `${rawProb}%`;
-            aiProbBar.style.width = `${rawProb}%`;
+            if (avgProb >= 78) confText = "ALTA";
+            else if (avgProb <= 60) confText = "BAJA";
             aiConfidence.innerText = `CONF: ${confText}`;
 
+            // Factores HTF, VSA y ST
             const d1Data = mtfVsaCache['1d'] ? mtfVsaCache['1d'].lastState : null;
             const h4Data = mtfVsaCache['4h'] ? mtfVsaCache['4h'].lastState : null;
 
@@ -645,23 +726,6 @@
             if (stInfo && stInfo.currentTrend) {
                 aiFactorSt.innerText = stInfo.currentTrend === 1 ? "BULLISH" : "BEARISH";
                 aiFactorSt.className = stInfo.currentTrend === 1 ? "txt-green" : "txt-red";
-            }
-
-            if (directionText.includes("BUY")) {
-                aiDirection.innerText = directionText;
-                aiDirection.className = "txt-green";
-                aiProbText.className = "txt-green";
-                aiProbBar.style.backgroundColor = "#00e676";
-            } else if (directionText.includes("SELL")) {
-                aiDirection.innerText = directionText;
-                aiDirection.className = "txt-red";
-                aiProbText.className = "txt-red";
-                aiProbBar.style.backgroundColor = "#ff1744";
-            } else {
-                aiDirection.innerText = directionText;
-                aiDirection.className = "txt-yellow";
-                aiProbText.className = "txt-yellow";
-                aiProbBar.style.backgroundColor = "#ffd700";
             }
         }
 
