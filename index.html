@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Bitcoin Trading Terminal - AI & VSA Original System</title>
+    <title>Bitcoin Trading Terminal - Left Panels Layout</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -104,31 +104,28 @@
             z-index: 5;
         }
 
-        /* DASHBOARD PRINCIPAL (DERECHA) */
-        #dashboard { 
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            z-index: 10;
-            display: flex; 
-            flex-direction: column; 
-            gap: 6px; 
-            max-height: calc(100% - 20px);
-            overflow-y: auto;
-            width: 270px;
-        }
-
-        /* PANEL IA COMPLETO (IZQUIERDA) */
-        #ai-panel-left {
+        /* CONTENEDOR UNIFICADO EN EL LADO IZQUIERDO */
+        #left-container {
             position: absolute;
             top: 10px;
             left: 10px;
             z-index: 10;
             display: flex;
             flex-direction: column;
-            gap: 6px;
-            width: 260px;
+            gap: 8px;
+            width: 270px;
+            max-height: calc(100% - 20px);
+            overflow-y: auto;
             pointer-events: auto;
+        }
+
+        /* Ocultar barra de scroll para apariencia más limpia */
+        #left-container::-webkit-scrollbar {
+            width: 4px;
+        }
+        #left-container::-webkit-scrollbar-thumb {
+            background: #2a2e39;
+            border-radius: 2px;
         }
 
         .config-box {
@@ -235,7 +232,7 @@
             <button id="btn-filter" class="btn-toggle active-filter">Filtro ST: ON</button>
             <button id="btn-vsa" class="btn-toggle">S/R Ballenas VSA</button>
             <button id="btn-signals" class="btn-toggle">Señales BUY/SELL</button>
-            <button id="btn-panel" class="btn-toggle">Dashboard MTF</button>
+            <button id="btn-panel" class="btn-toggle">Paneles IZQ</button>
         </div>
     </div>
 
@@ -245,8 +242,9 @@
             <canvas id="labels-overlay"></canvas>
         </div>
 
-        <!-- MÓDULO DE IA DETALLADO A LA IZQUIERDA -->
-        <div id="ai-panel-left">
+        <!-- AMBOS PANELES EN EL LADO IZQUIERDO -->
+        <div id="left-container">
+            <!-- PANEL 1: ANALISIS IA DETALLADO -->
             <div class="config-box ai-card">
                 <div class="config-row">
                     <span class="txt-purple">🧠 MOTOR PREDICTIVO IA</span>
@@ -271,7 +269,6 @@
 
                 <div class="ai-divider"></div>
 
-                <!-- DESGLOSE CUANTITATIVO DETALLADO -->
                 <div class="config-row">
                     <span style="color:#8f96a3;">Estructura HTF (1D/4H):</span>
                     <span id="ai-factor-htf" class="txt-yellow">--</span>
@@ -285,11 +282,8 @@
                     <span id="ai-factor-st" class="txt-yellow">--</span>
                 </div>
             </div>
-        </div>
 
-        <!-- PANEL DERECHO DE SUPERTREND, VSA Y CONFIGURACIÓN -->
-        <div id="dashboard">
-            <!-- MÓDULO SUPERTREND -->
+            <!-- PANEL 2: SUPERTREND & VSA MULTI-TIMEFRAME -->
             <div class="config-box" style="border-color: #00e676;">
                 <div class="config-row">
                     <span style="color:#00e676; font-weight:bold;">SUPERTREND</span>
@@ -305,7 +299,6 @@
                 </div>
             </div>
 
-            <!-- TABLA VSA MULTI-TIMEFRAME -->
             <div id="panel-vsa-mtf" class="vsa-table-container">
                 <table class="vsa-table">
                     <thead>
@@ -327,7 +320,6 @@
                 </table>
             </div>
 
-            <!-- AJUSTES VSA -->
             <div class="config-box">
                 <div class="config-row">
                     <span style="color:#787b86; font-weight:bold;">CONFIGURACIÓN VSA</span>
@@ -371,7 +363,7 @@
         const btnVsa = document.getElementById("btn-vsa");
         const btnSignals = document.getElementById("btn-signals");
         const btnPanel = document.getElementById("btn-panel");
-        const dashboard = document.getElementById("dashboard");
+        const leftContainer = document.getElementById("left-container");
 
         const dashStSignal = document.getElementById("dash-st-signal");
         const dashStPrice = document.getElementById("dash-st-price");
@@ -558,8 +550,7 @@
             return { stMarkers, lastSignal, currentTrend: trend[len - 1] };
         }
 
-        // MOTOR COMPLETO DE IA DETALLADO (IZQUIERDA)
-        function updateOriginalAIDashboard(stInfo) {
+        function updateAIDashboard(stInfo) {
             const tfWeights = {
                 '1d': 0.35,
                 '4h': 0.25,
@@ -621,7 +612,6 @@
             aiProbBar.style.width = `${rawProb}%`;
             aiConfidence.innerText = `CONF: ${confText}`;
 
-            // Actualizar Desglose Cuantitativo
             const d1Data = mtfVsaCache['1d'] ? mtfVsaCache['1d'].lastState : null;
             const h4Data = mtfVsaCache['4h'] ? mtfVsaCache['4h'].lastState : null;
 
@@ -806,7 +796,7 @@
                     dashStPrice.innerText = `$${stInfo.lastSignal.price.toFixed(2)}`;
                 }
 
-                updateOriginalAIDashboard(stInfo);
+                updateAIDashboard(stInfo);
 
                 statusEl.innerText = "Conectado ✓";
                 drawOverlay();
@@ -851,8 +841,8 @@
         });
 
         btnPanel.addEventListener("click", () => {
-            const currentDisplay = window.getComputedStyle(dashboard).display;
-            dashboard.style.display = currentDisplay === "none" ? "flex" : "none";
+            const currentDisplay = window.getComputedStyle(leftContainer).display;
+            leftContainer.style.display = currentDisplay === "none" ? "flex" : "none";
         });
 
         inputPeriod.addEventListener("change", (e) => {
