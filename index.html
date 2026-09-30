@@ -31,6 +31,7 @@
             font-size: 12px;
             flex-wrap: wrap;
             gap: 6px;
+            z-index: 20;
         }
 
         .controls-left { display: flex; align-items: center; gap: 8px; }
@@ -238,10 +239,10 @@
                 <option value="1m">1 Minuto</option>
                 <option value="3m">3 Minutos</option>
                 <option value="5m">5 Minutos</option>
-                <option value="15m" selected>15 Minutos</option>
+                <option value="15m">15 Minutos</option>
                 <option value="30m">30 Minutos</option>
                 <option value="1h">1 Hora</option>
-                <option value="4h">4 Horas</option>
+                <option value="4h" selected>4 Horas</option>
                 <option value="1d">1 Diario</option>
             </select>
             <div id="status" class="status-badge connecting">Conectando...</div>
@@ -389,7 +390,7 @@
         let orderBlocks = [];
         let fairValueGaps = [];
 
-        let currentTF = "15m";
+        let currentTF = "4h";
         let ws = null;
 
         let predictionsHistory = [];
@@ -632,8 +633,8 @@
                 }
             }
 
-            orderBlocks = orderBlocks.slice(-3);
-            fairValueGaps = fairValueGaps.slice(-3);
+            orderBlocks = orderBlocks.slice(-2);
+            fairValueGaps = fairValueGaps.slice(-2);
 
             return { events, lastSupport, lastResistance, lastState };
         }
@@ -888,38 +889,53 @@
             generateAiNarrative(pred15m, divInfo, stInfo);
         }
 
-        // DIBUJADO DE CAPA TRANSPARENTE CON ANTI-SOLAPAMIENTO Y MARGEN DE PANELES
+        // DIBUJADO EN CANVAS CON CONTROL DE LÍMITES Y ANTI-SOLAPAMIENTO AVANZADO
         function drawOverlay() {
             ctx.clearRect(0, 0, overlay.width, overlay.height);
 
-            // 1. Dibujar Order Blocks y Fair Value Gaps
+            // 1. Dibujar Order Blocks y Fair Value Gaps (Con recorte de bordes)
             if (showZones) {
                 orderBlocks.forEach(ob => {
-                    const yTop = candlestickSeries.priceToCoordinate(ob.top);
-                    const yBottom = candlestickSeries.priceToCoordinate(ob.bottom);
+                    let yTop = candlestickSeries.priceToCoordinate(ob.top);
+                    let yBottom = candlestickSeries.priceToCoordinate(ob.bottom);
                     if (yTop !== null && yBottom !== null) {
-                        ctx.fillStyle = ob.type === 'BULLISH' ? 'rgba(0, 230, 118, 0.12)' : 'rgba(255, 23, 68, 0.12)';
-                        ctx.fillRect(0, yTop, overlay.width, yBottom - yTop);
-                        ctx.fillStyle = ob.type === 'BULLISH' ? '#00e676' : '#ff1744';
-                        ctx.font = 'bold 9px sans-serif';
-                        ctx.fillText(`OB ${ob.type}`, 310, yTop + 10);
+                        const topClamped = Math.max(0, Math.min(overlay.height, Math.min(yTop, yBottom)));
+                        const bottomClamped = Math.max(0, Math.min(overlay.height, Math.max(yTop, yBottom)));
+                        const height = bottomClamped - topClamped;
+
+                        if (height > 0) {
+                            ctx.fillStyle = ob.type === 'BULLISH' ? 'rgba(0, 230, 118, 0.12)' : 'rgba(255, 23, 68, 0.12)';
+                            ctx.fillRect(0, topClamped, overlay.width, height);
+                            ctx.fillStyle = ob.type === 'BULLISH' ? '#00e676' : '#ff1744';
+                            ctx.font = 'bold 9px sans-serif';
+                            // Asegura margen superior de 20px para no pegarse a la top-bar
+                            const textY = Math.max(20, topClamped + 12);
+                            ctx.fillText(`OB ${ob.type}`, 310, textY);
+                        }
                     }
                 });
 
                 fairValueGaps.forEach(fvg => {
-                    const yTop = candlestickSeries.priceToCoordinate(fvg.top);
-                    const yBottom = candlestickSeries.priceToCoordinate(fvg.bottom);
+                    let yTop = candlestickSeries.priceToCoordinate(fvg.top);
+                    let yBottom = candlestickSeries.priceToCoordinate(fvg.bottom);
                     if (yTop !== null && yBottom !== null) {
-                        ctx.fillStyle = 'rgba(255, 215, 0, 0.12)';
-                        ctx.fillRect(0, yTop, overlay.width, yBottom - yTop);
-                        ctx.fillStyle = '#ffd700';
-                        ctx.font = 'bold 9px sans-serif';
-                        ctx.fillText(`FVG (Vacío)`, 380, yTop + 10);
+                        const topClamped = Math.max(0, Math.min(overlay.height, Math.min(yTop, yBottom)));
+                        const bottomClamped = Math.max(0, Math.min(overlay.height, Math.max(yTop, yBottom)));
+                        const height = bottomClamped - topClamped;
+
+                        if (height > 0) {
+                            ctx.fillStyle = 'rgba(255, 215, 0, 0.12)';
+                            ctx.fillRect(0, topClamped, overlay.width, height);
+                            ctx.fillStyle = '#ffd700';
+                            ctx.font = 'bold 9px sans-serif';
+                            const textY = Math.max(20, topClamped + 12);
+                            ctx.fillText(`FVG (Vacío)`, 380, textY);
+                        }
                     }
                 });
             }
 
-            // 2. Dibujar Líneas S/R VSA con Algoritmo de Separación Forzada y Cajas Opacas
+            // 2. Dibujar Líneas S/R VSA con Distribución Vertical Anti-Solapamiento
             if (showVsaLines && vsaLinesToDraw.length > 0) {
                 let mappedLines = [];
                 vsaLinesToDraw.forEach(line => {
@@ -929,16 +945,31 @@
                     }
                 });
 
+                // Ordenar por coordenada Y
                 mappedLines.sort((a, b) => a.y - b.y);
 
-                const minDistance = 16;
+                // Algoritmo de separación forzada (mínimo 18px entre textos)
+                const minDistance = 18;
                 for (let i = 1; i < mappedLines.length; i++) {
                     if (mappedLines[i].textY - mappedLines[i - 1].textY < minDistance) {
                         mappedLines[i].textY = mappedLines[i - 1].textY + minDistance;
                     }
                 }
 
+                // Ajuste inverso de abajo hacia arriba si el último texto rebasa el límite inferior
+                for (let i = mappedLines.length - 1; i >= 0; i--) {
+                    if (mappedLines[i].textY > overlay.height - 15) {
+                        mappedLines[i].textY = overlay.height - 15;
+                        for (let j = i - 1; j >= 0; j--) {
+                            if (mappedLines[j + 1].textY - mappedLines[j].textY < minDistance) {
+                                mappedLines[j].textY = mappedLines[j + 1].textY - minDistance;
+                            }
+                        }
+                    }
+                }
+
                 mappedLines.forEach(line => {
+                    // Línea punteada de nivel de precio
                     ctx.beginPath();
                     ctx.setLineDash([3, 3]);
                     ctx.strokeStyle = line.color;
@@ -947,19 +978,23 @@
                     ctx.lineTo(overlay.width, line.y);
                     ctx.stroke();
 
+                    // Etiqueta del eje derecho
                     const text = `${line.label}: $${line.price.toFixed(2)}`;
                     ctx.font = 'bold 10px monospace';
                     const textWidth = ctx.measureText(text).width;
                     const textX = overlay.width - textWidth - 65;
 
+                    // Fondo negro opaco para legibilidad
                     ctx.fillStyle = "#000000";
                     ctx.fillRect(textX - 4, line.textY - 10, textWidth + 8, 14);
 
+                    // Borde de la etiqueta
                     ctx.strokeStyle = line.color;
                     ctx.lineWidth = 0.5;
                     ctx.setLineDash([]);
                     ctx.strokeRect(textX - 4, line.textY - 10, textWidth + 8, 14);
 
+                    // Texto final
                     ctx.fillStyle = line.color;
                     ctx.fillText(text, textX, line.textY + 1);
                 });
