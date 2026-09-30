@@ -766,27 +766,23 @@
                 const mInf = Math.min(candle.open, candle.close) - candle.low;
                 const mSup = candle.high - Math.max(candle.open, candle.close);
 
-                const isBuy = isWhale && (deltaNet > 0 || mInf > (range * 0.35));
-                const isSell = isWhale && (deltaNet < 0 || mSup > (range * 0.35));
+                const isBuy = isWhale && (deltaNet > 0 || mInf > mSup);
+                const isSell = isWhale && (deltaNet < 0 || mSup > mInf);
 
                 if (isBuy) {
-                    const ev = { index: i, time: candle.time, type: 'BUY', price: candle.low, vol: effVol };
-                    events.push(ev);
-                    lastSupport = ev;
-                } else if (isSell) {
-                    const ev = { index: i, time: candle.time, type: 'SELL', price: candle.high, vol: effVol };
-                    events.push(ev);
-                    lastResistance = ev;
+                    lastSupport = { price: candle.low, time: candle.time };
+                    events.push({ type: 'BUY', time: candle.time, price: candle.close });
+                }
+                if (isSell) {
+                    lastResistance = { price: candle.high, time: candle.time };
+                    events.push({ type: 'SELL', time: candle.time, price: candle.close });
                 }
 
                 if (i === targetCandles.length - 1) {
-                    const lastEvent = events.length > 0 ? events[events.length - 1] : null;
+                    const buyPct = Math.round((volBuy / effVol) * 100);
+                    const sellPct = 100 - buyPct;
                     lastState = {
-                        isBuy: lastEvent ? lastEvent.type === 'BUY' : false,
-                        isSell: lastEvent ? lastEvent.type === 'SELL' : false,
-                        volume: effVol,
-                        pctBuy: ((volBuy / effVol) * 100).toFixed(1),
-                        pctSell: ((volSell / effVol) * 100).toFixed(1)
+                        isBuy, isSell, vol: effVol, avgVol, buyPct, sellPct
                     };
                 }
             }
@@ -795,384 +791,296 @@
         }
 
         function calculateVPVR() {
-            if (!showVPVR || currentCandleData.length === 0) return;
+            if (!showVPVR || !currentCandleData || currentCandleData.length === 0) {
+                vpvrData = { buckets: [], pocPrice: null, maxVol: 0 };
+                return;
+            }
 
             const range = chart.timeScale().getVisibleLogicalRange();
             if (!range) return;
 
-            const startIdx = Math.max(0, Math.floor(range.from));
-            const endIdx = Math.min(currentCandleData.length - 1, Math.ceil(range.to));
+            const startIndex = Math.max(0, Math.floor(range.from));
+            const endIndex = Math.min(currentCandleData.length - 1, Math.ceil(range.to));
 
-            if (startIdx >= endIdx) return;
+            if (startIndex >= endIndex) return;
 
-            const visibleCandles = currentCandleData.slice(startIdx, endIdx + 1);
-
-            let minPrice = Infinity;
-            let maxPrice = -Infinity;
+            const visibleCandles = currentCandleData.slice(startIndex, endIndex + 1);
+            let minP = Infinity, maxP = -Infinity;
 
             visibleCandles.forEach(c => {
-                if (c.low < minPrice) minPrice = c.low;
-                if (c.high > maxPrice) maxPrice = c.high;
+                if (c.low < minP) minP = c.low;
+                if (c.high > maxP) maxP = c.high;
             });
 
-            if (minPrice === Infinity || maxPrice === -Infinity) return;
+            if (minP === Infinity || maxP === -Infinity || minP === maxP) return;
 
             const numBuckets = 40;
-            const bucketSize = (maxPrice - minPrice) / numBuckets;
-            let buckets = new Array(numBuckets).fill(0);
+            const bucketSize = (maxP - minP) / numBuckets;
+            const buckets = new Array(numBuckets).fill(0);
 
             visibleCandles.forEach(c => {
-                const midPrice = (c.high + c.low) / 2;
-                let bIdx = Math.floor((midPrice - minPrice) / bucketSize);
-                if (bIdx >= numBuckets) bIdx = numBuckets - 1;
-                if (bIdx < 0) bIdx = 0;
+                const bIdx = Math.min(numBuckets - 1, Math.floor((c.close - minP) / bucketSize));
                 buckets[bIdx] += c.volume;
             });
 
             let maxVol = 0;
-            let pocIdx = 0;
-
+            let maxIdx = 0;
             buckets.forEach((v, idx) => {
                 if (v > maxVol) {
                     maxVol = v;
-                    pocIdx = idx;
+                    maxIdx = idx;
                 }
             });
 
-            const pocPrice = minPrice + (pocIdx * bucketSize) + (bucketSize / 2);
-
-            vpvrData = {
-                buckets: buckets.map((vol, idx) => ({
-                    priceLow: minPrice + (idx * bucketSize),
-                    priceHigh: minPrice + ((idx + 1) * bucketSize),
-                    volume: vol
-                })),
-                pocPrice: pocPrice,
-                maxVol: maxVol
-            };
-
-            const elPoc = document.getElementById("setup-poc");
-            if (elPoc) elPoc.innerText = pocPrice.toFixed(2);
+            const pocPrice = minP + (maxIdx + 0.5) * bucketSize;
+            vpvrData = { buckets, minP, bucketSize, maxVol, pocPrice };
         }
 
-        function runPredictionEngine() {
-            if (currentCandleData.length === 0) return;
-
-            const currentPrice = currentCandleData[currentCandleData.length - 1].close;
-            const tfs = ['15m', '1h', '4h'];
-            let predictions = {};
-
-            let totalBias = 0;
-            let activeSupports = [];
-            let activeResistances = [];
-
-            tfs.forEach(tf => {
-                const cache = mtfVsaCache[tf];
-                if (!cache) return;
-
-                if (cache.lastSupport) activeSupports.push(cache.lastSupport.price);
-                if (cache.lastResistance) activeResistances.push(cache.lastResistance.price);
-
-                let tfBias = 0;
-                if (cache.lastState) {
-                    if (cache.lastState.isBuy) tfBias += 1;
-                    if (cache.lastState.isSell) tfBias -= 1;
-                }
-                totalBias += tfBias;
-
-                const prob = Math.min(95, Math.max(50, 60 + (tfBias * 15)));
-                predictions[tf] = {
-                    dir: tfBias > 0 ? "BULL" : tfBias < 0 ? "BEAR" : "NEUT",
-                    prob: prob
-                };
-            });
-
-            ['15m', '1h', '4h'].forEach(tf => {
-                const elVal = document.getElementById(`p-${tf}`);
-                const elProb = document.getElementById(`prob-${tf}`);
-                if (predictions[tf]) {
-                    elVal.innerText = predictions[tf].dir;
-                    elVal.className = `predict-val ${predictions[tf].dir === 'BULL' ? 'txt-green' : predictions[tf].dir === 'BEAR' ? 'txt-red' : 'txt-yellow'}`;
-                    elProb.innerText = `${predictions[tf].prob}%`;
-                }
-            });
-
-            let setupType = "NEUTRO";
-            let entry = currentPrice;
-            let sl = currentPrice * 0.99;
-            let tp1 = currentPrice * 1.015;
-            let tp2 = currentPrice * 1.03;
-
-            if (totalBias > 0 && activeSupports.length > 0) {
-                setupType = "LONG (COMPRA)";
-                entry = Math.max(...activeSupports);
-                sl = entry * 0.992;
-                tp1 = entry + (entry - sl) * 2;
-                tp2 = entry + (entry - sl) * 3.5;
-            } else if (totalBias < 0 && activeResistances.length > 0) {
-                setupType = "SHORT (VENTA)";
-                entry = Math.min(...activeResistances);
-                sl = entry * 1.008;
-                tp1 = entry - (sl - entry) * 2;
-                tp2 = entry - (sl - entry) * 3.5;
-            }
-
-            document.getElementById("setup-type").innerText = setupType;
-            document.getElementById("setup-type").className = setupType.includes("LONG") ? "txt-green" : setupType.includes("SHORT") ? "txt-red" : "txt-yellow";
-            document.getElementById("setup-entry").innerText = entry ? entry.toFixed(2) : "--";
-            document.getElementById("setup-sl").innerText = sl ? sl.toFixed(2) : "--";
-            document.getElementById("setup-tp1").innerText = tp1 ? tp1.toFixed(2) : "--";
-            document.getElementById("setup-tp2").innerText = tp2 ? tp2.toFixed(2) : "--";
-            
-            const risk = Math.abs(entry - sl);
-            const reward = Math.abs(tp1 - entry);
-            const rr = risk > 0 ? (reward / risk).toFixed(1) : "--";
-            document.getElementById("setup-rr").innerText = `1 : ${rr}`;
-        }
-
-        /* DIBUJO REAL EN CANVAS: SEGMENTOS VSA + BADGES FLOTANTES */
         function drawOverlay() {
-            const width = chartContainer.clientWidth;
-            const height = chartContainer.clientHeight;
-            ctx.clearRect(0, 0, width, height);
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
 
+            // Draw VPVR
             if (showVPVR && vpvrData.buckets.length > 0) {
+                const width = overlay.width;
                 const maxBarWidth = width * 0.15;
-                vpvrData.buckets.forEach(b => {
-                    const yTop = candlestickSeries.priceToCoordinate(b.priceHigh);
-                    const yBottom = candlestickSeries.priceToCoordinate(b.priceLow);
-                    if (yTop !== null && yBottom !== null) {
-                        const h = Math.max(1, Math.abs(yBottom - yTop));
-                        const w = (b.volume / vpvrData.maxVol) * maxBarWidth;
-                        ctx.fillStyle = "rgba(41, 98, 255, 0.22)";
-                        ctx.fillRect(width - w, Math.min(yTop, yBottom), w, h);
-                    }
+
+                vpvrData.buckets.forEach((vol, idx) => {
+                    if (vol === 0) return;
+                    const priceVal = vpvrData.minP + (idx + 0.5) * vpvrData.bucketSize;
+                    const y = candlestickSeries.priceToCoordinate(priceVal);
+                    if (y === null) return;
+
+                    const barW = (vol / vpvrData.maxVol) * maxBarWidth;
+                    ctx.fillStyle = "rgba(41, 98, 255, 0.25)";
+                    ctx.fillRect(width - barW, y - 2, barW, 4);
                 });
 
                 if (vpvrData.pocPrice) {
-                    const yPoc = candlestickSeries.priceToCoordinate(vpvrData.pocPrice);
-                    if (yPoc !== null) {
+                    const pocY = candlestickSeries.priceToCoordinate(vpvrData.pocPrice);
+                    if (pocY !== null) {
                         ctx.strokeStyle = "#e040fb";
                         ctx.lineWidth = 1.5;
                         ctx.setLineDash([4, 4]);
                         ctx.beginPath();
-                        ctx.moveTo(0, yPoc);
-                        ctx.lineTo(width, yPoc);
+                        ctx.moveTo(0, pocY);
+                        ctx.lineTo(width, pocY);
                         ctx.stroke();
                         ctx.setLineDash([]);
+
+                        ctx.fillStyle = "#e040fb";
+                        ctx.font = "10px sans-serif";
+                        ctx.fillText(`POC: $${vpvrData.pocPrice.toFixed(2)}`, width - 110, pocY - 4);
                     }
                 }
             }
 
+            // Draw VSA Lines
             if (showVsaLines && vsaLinesToDraw.length > 0) {
-                vsaLinesToDraw.forEach(item => {
-                    const y = candlestickSeries.priceToCoordinate(item.price);
-                    if (y === null || y < 0 || y > height) return;
+                vsaLinesToDraw.forEach(line => {
+                    const y = candlestickSeries.priceToCoordinate(line.price);
+                    if (y === null) return;
 
-                    let xStart = 0;
-                    if (item.time) {
-                        const calculatedX = chart.timeScale().timeToCoordinate(item.time);
-                        if (calculatedX !== null) {
-                            xStart = Math.max(0, calculatedX);
-                        }
-                    }
-
-                    const xEnd = width - 60; // Deja margen para la escala del precio
-                    
-                    // 1. Dibuja el segmento de línea horizontal
+                    ctx.strokeStyle = line.color;
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([2, 2]);
                     ctx.beginPath();
-                    ctx.strokeStyle = item.color;
-                    ctx.lineWidth = item.label.includes("4H") || item.label.includes("1D") ? 3 : 2;
-                    ctx.setLineDash([]);
-                    ctx.moveTo(xStart, y);
-                    ctx.lineTo(xEnd, y);
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(overlay.width, y);
                     ctx.stroke();
+                    ctx.setLineDash([]);
 
-                    // 2. Dibuja la etiqueta/badge tipo píldora flotante
-                    ctx.font = "bold 10px -apple-system, BlinkMacSystemFont, Roboto, sans-serif";
-                    const textWidth = ctx.measureText(item.label).width;
-                    const paddingX = 6;
-                    const badgeWidth = textWidth + (paddingX * 2);
-                    const badgeHeight = 16;
-                    const badgeX = xEnd - badgeWidth;
-                    const badgeY = y - (badgeHeight / 2);
-
-                    ctx.fillStyle = item.color;
-                    ctx.beginPath();
-                    if (ctx.roundRect) {
-                        ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 3);
-                    } else {
-                        ctx.rect(badgeX, badgeY, badgeWidth, badgeHeight);
-                    }
-                    ctx.fill();
-
-                    // 3. Texto dentro del badge
-                    ctx.fillStyle = "#ffffff";
-                    ctx.textAlign = "center";
-                    ctx.textBaseline = "middle";
-                    ctx.fillText(item.label, badgeX + (badgeWidth / 2), y);
+                    ctx.fillStyle = line.color;
+                    ctx.font = "10px sans-serif";
+                    ctx.fillText(`${line.label}: $${line.price.toFixed(2)}`, 10, y - 4);
                 });
             }
         }
 
-        function refreshSupertrendDisplay() {
-            const { stMarkers, lastSignal } = getSupertrendMarkers(currentCandleData);
-            if (showSupertrend || showVsaSignals) {
-                candlestickSeries.setMarkers(stMarkers);
-            } else {
-                candlestickSeries.setMarkers([]);
-            }
-
-            if (lastSignal) {
-                dashStSignal.innerText = lastSignal.type;
-                dashStSignal.className = lastSignal.type === 'BUY' ? 'txt-green' : 'txt-red';
-                dashStPrice.innerText = `$${lastSignal.price.toFixed(2)}`;
-
-                if (lastSignal.time !== lastNotifiedSignalTime || lastSignal.type !== lastNotifiedSignalType) {
-                    lastNotifiedSignalTime = lastSignal.time;
-                    lastNotifiedSignalType = lastSignal.type;
-                    playBeepSound(lastSignal.type);
-                    sendTelegramAlert(lastSignal.type, lastSignal.price, currentTF);
-                }
-            } else {
-                dashStSignal.innerText = "SIN SEÑAL";
-                dashStSignal.className = "txt-yellow";
-                dashStPrice.innerText = "--";
-            }
+        async function fetchCandles(tf) {
+            const url = `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${tf}&limit=300`;
+            const res = await fetch(url);
+            const data = await res.json();
+            return data.map(d => ({
+                time: d[0] / 1000,
+                open: parseFloat(d[1]),
+                high: parseFloat(d[2]),
+                low: parseFloat(d[3]),
+                close: parseFloat(d[4]),
+                volume: parseFloat(d[5])
+            }));
         }
 
-        async function fetchHistory(tf) {
-            try {
-                updateStatus("Cargando...", "#ffd700", "rgba(255, 215, 0, 0.15)");
-                const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${tf}&limit=300`);
-                const data = await response.json();
-                
-                currentCandleData = data.map(d => ({
-                    time: d[0] / 1000,
-                    open: parseFloat(d[1]),
-                    high: parseFloat(d[2]),
-                    low: parseFloat(d[3]),
-                    close: parseFloat(d[4]),
-                    volume: parseFloat(d[5])
-                }));
-
-                candlestickSeries.setData(currentCandleData);
-
-                await fetchMTFVsaData();
-                collectAllVSALines();
-
-                calculateVPVR();
-                refreshSupertrendDisplay();
-                runPredictionEngine();
-                drawOverlay();
-
-                updateStatus("LIVE", "#00e676", "rgba(0, 230, 118, 0.15)");
-            } catch (err) {
-                console.error("Fetch history error:", err);
-                updateStatus("Error Carga", "#ff1744", "rgba(255, 23, 68, 0.15)");
-            }
-        }
-
-        async function fetchMTFVsaData() {
+        async function updateMTFData() {
             const tfs = ['5m', '15m', '1h', '4h', '1d'];
             for (let tf of tfs) {
                 try {
-                    const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${tf}&limit=100`);
-                    const data = await res.json();
-                    const candles = data.map(d => ({
-                        time: d[0] / 1000,
-                        open: parseFloat(d[1]),
-                        high: parseFloat(d[2]),
-                        low: parseFloat(d[3]),
-                        close: parseFloat(d[4]),
-                        volume: parseFloat(d[5])
-                    }));
-                    
-                    const analysis = analyzeVSAData(candles, periodoVol, factorVol, true);
+                    const cData = await fetchCandles(tf);
+                    const analysis = analyzeVSAData(cData, periodoVol, factorVol, true);
                     mtfVsaCache[tf] = analysis;
-                    
+
                     const row = document.getElementById(`row-${tf}`);
                     if (row && analysis.lastState) {
                         const st = analysis.lastState;
-                        const badge = st.isBuy ? '<span class="badge-buy">BUY</span>' : st.isSell ? '<span class="badge-sell">SELL</span>' : '<span class="badge-neu">NEU</span>';
-                        row.cells[1].innerHTML = badge;
-                        row.cells[2].innerText = Math.round(st.volume);
-                        row.cells[3].innerText = `${st.pctBuy}%`;
-                        row.cells[4].innerText = `${st.pctSell}%`;
+                        const vsaTd = row.children[1];
+                        const volTd = row.children[2];
+                        const buyTd = row.children[3];
+                        const sellTd = row.children[4];
+
+                        if (st.isBuy) vsaTd.innerHTML = `<span class="badge-buy">COMPRA</span>`;
+                        else if (st.isSell) vsaTd.innerHTML = `<span class="badge-sell">VENTA</span>`;
+                        else vsaTd.innerHTML = `<span class="badge-neu">NEU</span>`;
+
+                        volTd.innerText = Math.round(st.vol).toLocaleString();
+                        buyTd.innerText = `${st.buyPct}%`;
+                        sellTd.innerText = `${st.sellPct}%`;
                     }
                 } catch (e) {
-                    console.warn(`Error MTF VSA ${tf}:`, e);
+                    console.error("Error fetching MTF:", tf, e);
                 }
+            }
+
+            // Update AI Projections
+            const p15m = document.getElementById("p-15m");
+            const p1h = document.getElementById("p-1h");
+            const p4h = document.getElementById("p-4h");
+
+            if (mtfVsaCache['15m'] && mtfVsaCache['15m'].lastState) {
+                p15m.innerText = mtfVsaCache['15m'].lastState.isBuy ? "BULL" : mtfVsaCache['15m'].lastState.isSell ? "BEAR" : "NEUT";
+                p15m.className = `predict-val ${mtfVsaCache['15m'].lastState.isBuy ? 'txt-green' : mtfVsaCache['15m'].lastState.isSell ? 'txt-red' : 'txt-yellow'}`;
+            }
+            if (mtfVsaCache['1h'] && mtfVsaCache['1h'].lastState) {
+                p1h.innerText = mtfVsaCache['1h'].lastState.isBuy ? "BULL" : mtfVsaCache['1h'].lastState.isSell ? "BEAR" : "NEUT";
+                p1h.className = `predict-val ${mtfVsaCache['1h'].lastState.isBuy ? 'txt-green' : mtfVsaCache['1h'].lastState.isSell ? 'txt-red' : 'txt-yellow'}`;
+            }
+            if (mtfVsaCache['4h'] && mtfVsaCache['4h'].lastState) {
+                p4h.innerText = mtfVsaCache['4h'].lastState.isBuy ? "BULL" : mtfVsaCache['4h'].lastState.isSell ? "BEAR" : "NEUT";
+                p4h.className = `predict-val ${mtfVsaCache['4h'].lastState.isBuy ? 'txt-green' : mtfVsaCache['4h'].lastState.isSell ? 'txt-red' : 'txt-yellow'}`;
+            }
+
+            collectAllVSALines();
+            drawOverlay();
+        }
+
+        async function loadChartData() {
+            updateStatus("Cargando...", "#ffd700", "rgba(255, 215, 0, 0.15)");
+            try {
+                currentCandleData = await fetchCandles(currentTF);
+                candlestickSeries.setData(currentCandleData);
+
+                collectAllVSALines();
+                calculateVPVR();
+
+                const { stMarkers, lastSignal } = getSupertrendMarkers(currentCandleData);
+                if (showSupertrend) candlestickSeries.setMarkers(stMarkers);
+                else candlestickSeries.setMarkers([]);
+
+                if (lastSignal) {
+                    dashStSignal.innerText = lastSignal.type;
+                    dashStSignal.className = lastSignal.type === "BUY" ? "txt-green" : "txt-red";
+                    dashStPrice.innerText = `$${lastSignal.price.toFixed(2)}`;
+
+                    document.getElementById("setup-type").innerText = lastSignal.type === "BUY" ? "LONG (COMPRA)" : "SHORT (VENTA)";
+                    document.getElementById("setup-type").className = lastSignal.type === "BUY" ? "txt-green" : "txt-red";
+                    document.getElementById("setup-entry").innerText = `$${lastSignal.price.toFixed(2)}`;
+                    
+                    const sl = lastSignal.type === "BUY" ? lastSignal.price * 0.99 : lastSignal.price * 1.01;
+                    const tp1 = lastSignal.type === "BUY" ? lastSignal.price * 1.015 : lastSignal.price * 0.985;
+                    const tp2 = lastSignal.type === "BUY" ? lastSignal.price * 1.03 : lastSignal.price * 0.97;
+
+                    document.getElementById("setup-sl").innerText = `$${sl.toFixed(2)}`;
+                    document.getElementById("setup-tp1").innerText = `$${tp1.toFixed(2)}`;
+                    document.getElementById("setup-tp2").innerText = `$${tp2.toFixed(2)}`;
+                    document.getElementById("setup-poc").innerText = vpvrData.pocPrice ? `$${vpvrData.pocPrice.toFixed(2)}` : "--";
+                    document.getElementById("setup-rr").innerText = "1 : 2.0";
+
+                    if (lastNotifiedSignalTime !== lastSignal.time || lastNotifiedSignalType !== lastSignal.type) {
+                        playBeepSound(lastSignal.type);
+                        sendTelegramAlert(lastSignal.type, lastSignal.price, currentTF);
+                        lastNotifiedSignalTime = lastSignal.time;
+                        lastNotifiedSignalType = lastSignal.type;
+                    }
+                }
+
+                updateStatus("LIVE", "#00e676", "rgba(0, 230, 118, 0.15)");
+                drawOverlay();
+            } catch (err) {
+                console.error("Data Load Error:", err);
+                updateStatus("ERROR", "#ff1744", "rgba(255, 23, 68, 0.15)");
             }
         }
 
-        function connectWebSocket() {
+        function initWebSocket() {
             if (ws) ws.close();
-            
-            const wsUrl = `wss://stream.binance.com:9443/ws/btcusdt@kline_${currentTF}`;
-            ws = new WebSocket(wsUrl);
+
+            const streamName = `btcusdt@kline_${currentTF}`;
+            ws = new WebSocket(`wss://stream.binance.com:9443/ws/${streamName}`);
 
             ws.onopen = () => {
                 updateStatus("LIVE", "#00e676", "rgba(0, 230, 118, 0.15)");
-                pingInterval = setInterval(() => ws.send(JSON.stringify({ method: "PING" })), 180000);
+                pingInterval = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ method: "PING" })); }, 180000);
             };
 
-            ws.onmessage = (evt) => {
-                const msg = JSON.parse(evt.data);
-                if (!msg.k) return;
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                if (msg.e === "kline") {
+                    const k = msg.k;
+                    const candle = {
+                        time: k.t / 1000,
+                        open: parseFloat(k.o),
+                        high: parseFloat(k.h),
+                        low: parseFloat(k.l),
+                        close: parseFloat(k.c),
+                        volume: parseFloat(k.v)
+                    };
 
-                const k = msg.k;
-                const candle = {
-                    time: k.t / 1000,
-                    open: parseFloat(k.o),
-                    high: parseFloat(k.h),
-                    low: parseFloat(k.l),
-                    close: parseFloat(k.c),
-                    volume: parseFloat(k.v)
-                };
+                    candlestickSeries.update(candle);
 
-                const lastIdx = currentCandleData.length - 1;
-                if (lastIdx >= 0 && currentCandleData[lastIdx].time === candle.time) {
-                    currentCandleData[lastIdx] = candle;
-                } else {
-                    currentCandleData.push(candle);
+                    if (currentCandleData.length > 0) {
+                        const last = currentCandleData[currentCandleData.length - 1];
+                        if (last.time === candle.time) {
+                            currentCandleData[currentCandleData.length - 1] = candle;
+                        } else {
+                            currentCandleData.push(candle);
+                        }
+                    }
+
+                    const { stMarkers, lastSignal } = getSupertrendMarkers(currentCandleData);
+                    if (showSupertrend) candlestickSeries.setMarkers(stMarkers);
+
+                    calculateVPVR();
+                    drawOverlay();
                 }
-
-                candlestickSeries.update(candle);
-                calculateVPVR();
-
-                refreshSupertrendDisplay();
-                runPredictionEngine();
-                drawOverlay();
             };
 
-            ws.onerror = () => updateStatus("WS Error", "#ff1744", "rgba(255, 23, 68, 0.15)");
             ws.onclose = () => {
                 clearInterval(pingInterval);
-                reconnectTimeout = setTimeout(connectWebSocket, 5000);
+                updateStatus("Reconectando...", "#ff9800", "rgba(255, 152, 0, 0.15)");
+                reconnectTimeout = setTimeout(initWebSocket, 3000);
             };
         }
+
+        timeframeSelect.addEventListener("change", (e) => {
+            currentTF = e.target.value;
+            loadChartData();
+            initWebSocket();
+        });
 
         btnSupertrend.addEventListener("click", () => {
             showSupertrend = !showSupertrend;
             btnSupertrend.classList.toggle("inactive", !showSupertrend);
-            refreshSupertrendDisplay();
+            const { stMarkers } = getSupertrendMarkers(currentCandleData);
+            candlestickSeries.setMarkers(showSupertrend ? stMarkers : []);
         });
 
         btnFilter.addEventListener("click", () => {
             useFilter = !useFilter;
-            if (useFilter) {
-                btnFilter.innerText = "Filtro ST: ON";
-                btnFilter.className = "btn-toggle active-filter";
-                stFilterStatus.innerText = "[FILTRO ACTIVO]";
-                stFilterStatus.style.color = "#ff9800";
-            } else {
-                btnFilter.innerText = "Filtro ST: OFF";
-                btnFilter.className = "btn-toggle inactive";
-                stFilterStatus.innerText = "[FILTRO DESACTIVADO]";
-                stFilterStatus.style.color = "#787b86";
-            }
-            refreshSupertrendDisplay();
+            btnFilter.classList.toggle("active-filter", useFilter);
+            btnFilter.innerText = `Filtro ST: ${useFilter ? 'ON' : 'OFF'}`;
+            stFilterStatus.innerText = useFilter ? '[FILTRO ACTIVO]' : '[FILTRO OFF]';
+            stFilterStatus.style.color = useFilter ? '#ff9800' : '#787b86';
+
+            const { stMarkers } = getSupertrendMarkers(currentCandleData);
+            if (showSupertrend) candlestickSeries.setMarkers(stMarkers);
         });
 
         btnVsa.addEventListener("click", () => {
@@ -1184,39 +1092,39 @@
         btnSignals.addEventListener("click", () => {
             showVsaSignals = !showVsaSignals;
             btnSignals.classList.toggle("inactive", !showVsaSignals);
-            refreshSupertrendDisplay();
+            const { stMarkers } = getSupertrendMarkers(currentCandleData);
+            if (showSupertrend) candlestickSeries.setMarkers(stMarkers);
         });
 
         btnVpvr.addEventListener("click", () => {
             showVPVR = !showVPVR;
             btnVpvr.classList.toggle("inactive", !showVPVR);
+            calculateVPVR();
             drawOverlay();
         });
 
         btnPanel.addEventListener("click", () => {
-            const isHidden = dashboard.style.display === "none";
-            dashboard.style.display = isHidden ? "flex" : "none";
-            btnPanel.classList.toggle("inactive", !isHidden);
-        });
-
-        timeframeSelect.addEventListener("change", (e) => {
-            currentTF = e.target.value;
-            fetchHistory(currentTF);
-            connectWebSocket();
+            const currentDisplay = window.getComputedStyle(dashboard).display;
+            dashboard.style.display = currentDisplay === "none" ? "flex" : "none";
         });
 
         inputPeriod.addEventListener("change", (e) => {
             periodoVol = parseInt(e.target.value) || 20;
-            fetchHistory(currentTF);
+            updateMTFData();
+            loadChartData();
         });
 
         inputFactor.addEventListener("change", (e) => {
             factorVol = parseFloat(e.target.value) || 1.8;
-            fetchHistory(currentTF);
+            updateMTFData();
+            loadChartData();
         });
 
-        fetchHistory(currentTF);
-        connectWebSocket();
+        // Initial Boot
+        loadChartData();
+        updateMTFData();
+        initWebSocket();
+        setInterval(updateMTFData, 60000);
     });
     </script>
 </body>
