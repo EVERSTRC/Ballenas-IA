@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Bitcoin Trading Terminal - Filtered Decision Engine</title>
+    <title>Bitcoin Trading Terminal - VPVR, Decision Engine & Supertrend</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -19,6 +19,7 @@
             flex-direction: column; 
         }
 
+        /* BARRA SUPERIOR RESPONSIVA */
         #top-bar { 
             display: flex; 
             align-items: center; 
@@ -72,6 +73,7 @@
         }
         .btn-toggle.inactive { background-color: #2a2e39; color: #787b86; }
 
+        /* CONTENEDOR PRINCIPAL */
         #main-container { 
             display: flex; 
             flex: 1; 
@@ -103,6 +105,7 @@
             z-index: 5;
         }
 
+        /* DASHBOARD FLOTANTE / UBICADO A LA IZQUIERDA */
         #dashboard { 
             position: absolute;
             top: 10px;
@@ -263,13 +266,32 @@
         .config-input { width: 45px; background: #2a2e39; border: 1px solid #363c4e; color: #fff; text-align: right; font-size: 10px; border-radius: 2px; }
 
         @media (max-width: 768px) {
-            #top-bar { padding: 6px; height: auto; }
-            .controls-left, .controls-right { width: 100%; justify-content: space-between; }
-            .btn-toggle { font-size: 10px; padding: 4px 6px; flex: 1; text-align: center; }
+            #top-bar {
+                padding: 6px;
+                height: auto;
+            }
+            .controls-left, .controls-right {
+                width: 100%;
+                justify-content: space-between;
+            }
+            .btn-toggle {
+                font-size: 10px;
+                padding: 4px 6px;
+                flex: 1;
+                text-align: center;
+            }
             #dashboard {
-                position: absolute; top: 0; right: 0; left: 0; bottom: 0;
-                width: 100%; max-height: 100%; background: rgba(0, 0, 0, 0.85);
-                backdrop-filter: blur(4px); padding: 12px; display: none;
+                position: absolute;
+                top: 0;
+                right: 0;
+                left: 0;
+                bottom: 0;
+                width: 100%;
+                max-height: 100%;
+                background: rgba(0, 0, 0, 0.85);
+                backdrop-filter: blur(4px);
+                padding: 12px;
+                display: none;
             }
         }
     </style>
@@ -311,7 +333,7 @@
                     <span id="ai-status" style="color: #00e676;">LIVE</span>
                 </div>
                 <div style="font-size: 9px; color: #b2b5be; margin-bottom: 4px;" id="ai-summary">
-                    Filtro de confluencia activo...
+                    Analizando interacciones con liquidez...
                 </div>
                 <div class="predict-grid">
                     <div class="predict-box">
@@ -336,26 +358,29 @@
                 <div class="predict-title" style="color: #2962ff; border-bottom-color: rgba(41, 98, 255, 0.2);">
                     <span>Guía de Decisiones</span>
                 </div>
+                
                 <div class="range-item high">
                     <div><span class="range-pct txt-green">85%–95%</span></div>
                     <div class="range-desc"><b>Entrada Ideal</b><br><span style="font-size: 8px; color: #00e676;">Confluencia Alta</span></div>
                 </div>
+
                 <div class="range-item medium">
                     <div><span class="range-pct txt-yellow">70%–84%</span></div>
                     <div class="range-desc"><b>Confirmada</b><br><span style="font-size: 8px; color: #ffd700;">Vela Rechazo</span></div>
                 </div>
+
                 <div class="range-item low">
                     <div><span class="range-pct txt-red">50%–69%</span></div>
-                    <div class="range-desc"><b>Fuera</b><br><span style="font-size: 8px; color: #ff1744;">Falso Rompimiento</span></div>
+                    <div class="range-desc"><b>Fuera</b><br><span style="font-size: 8px; color: #ff1744;">Zona Neutra</span></div>
                 </div>
             </div>
 
             <div id="dash-module-supertrend" class="config-box" style="border-color: #00e676;">
                 <div class="config-row">
-                    <span style="color:#00e676; font-weight:bold;">SUPERTREND (FILTRADO)</span>
+                    <span style="color:#00e676; font-weight:bold;">SUPERTREND</span>
                 </div>
                 <div class="config-row">
-                    <span>Señal Valida:</span>
+                    <span>Señal:</span>
                     <span id="dash-st-signal" class="txt-yellow">--</span>
                 </div>
                 <div class="config-row">
@@ -537,7 +562,6 @@
             }
         }
 
-        /* MOTOR FILTRADO DE SUPERTREND CON MTF Y S/R VSA */
         function getSupertrendMarkers(candles, atrPeriods = 14, multiplier = 2.0) {
             if (!candles || candles.length < atrPeriods + 1) return { stMarkers: [], lastSignal: null };
             const len = candles.length;
@@ -580,47 +604,13 @@
             const stMarkers = [];
             let lastSignal = null;
 
-            // Extraer Sesgo MTF de 1H si está disponible
-            const h1Data = mtfVsaCache['1h'];
-            const is1HBear = h1Data && h1Data.lastState && h1Data.lastState.isSell;
-            const is1HBull = h1Data && h1Data.lastState && h1Data.lastState.isBuy;
-
             for (let i = 1; i < len; i++) {
-                const closePx = candles[i].close;
-
-                // Validación contra niveles clave VSA / POC
-                let blockedByResistance = false;
-                let blockedBySupport = false;
-
-                vsaLinesToDraw.forEach(line => {
-                    const distPct = Math.abs(closePx - line.price) / closePx;
-                    if (distPct < 0.0020) { // Distancia menor a 0.2%
-                        if (line.type === 'SELL' && closePx < line.price) blockedByResistance = true;
-                        if (line.type === 'BUY' && closePx > line.price) blockedBySupport = true;
-                    }
-                });
-
-                if (vpvrData.pocPrice) {
-                    const pocDist = Math.abs(closePx - vpvrData.pocPrice) / closePx;
-                    if (pocDist < 0.0015) {
-                        if (closePx < vpvrData.pocPrice) blockedByResistance = true;
-                        if (closePx > vpvrData.pocPrice) blockedBySupport = true;
-                    }
-                }
-
-                // Aplicar filtros de falsos rompimientos
                 if (trend[i] === 1 && trend[i - 1] === -1) {
-                    // Filtrar BUY si chocamos con resistencia o si 1H es marcadamente bajista
-                    if (!blockedByResistance && !is1HBear) {
-                        stMarkers.push({ time: candles[i].time, position: 'belowBar', color: '#00e676', shape: 'arrowUp', text: 'ST BUY' });
-                        lastSignal = { type: 'BUY', price: closePx, time: candles[i].time };
-                    }
+                    stMarkers.push({ time: candles[i].time, position: 'belowBar', color: '#00e676', shape: 'arrowUp', text: 'ST BUY' });
+                    lastSignal = { type: 'BUY', price: candles[i].close, time: candles[i].time };
                 } else if (trend[i] === -1 && trend[i - 1] === 1) {
-                    // Filtrar SELL si rebotamos en soporte o si 1H es alcista
-                    if (!blockedBySupport && !is1HBull) {
-                        stMarkers.push({ time: candles[i].time, position: 'aboveBar', color: '#ff1744', shape: 'arrowDown', text: 'ST SELL' });
-                        lastSignal = { type: 'SELL', price: closePx, time: candles[i].time };
-                    }
+                    stMarkers.push({ time: candles[i].time, position: 'aboveBar', color: '#ff1744', shape: 'arrowDown', text: 'ST SELL' });
+                    lastSignal = { type: 'SELL', price: candles[i].close, time: candles[i].time };
                 }
             }
             return { stMarkers, lastSignal };
@@ -815,6 +805,7 @@
                 };
             });
 
+            // Actualizar interfaz AI
             ['15m', '1h', '4h'].forEach(tf => {
                 const elVal = document.getElementById(`p-${tf}`);
                 const elProb = document.getElementById(`prob-${tf}`);
@@ -825,6 +816,7 @@
                 }
             });
 
+            // Generar Setup
             let setupType = "NEUTRO";
             let entry = currentPrice;
             let sl = currentPrice * 0.99;
@@ -863,6 +855,7 @@
         function drawOverlay() {
             ctx.clearRect(0, 0, overlay.width, overlay.height);
 
+            // Draw VPVR
             if (showVPVR && vpvrData.buckets.length > 0) {
                 const maxBarWidth = overlay.width * 0.15;
                 vpvrData.buckets.forEach(b => {
@@ -891,6 +884,7 @@
                 }
             }
 
+            // Draw S/R VSA Lines
             if (showVsaLines && vsaLinesToDraw.length > 0) {
                 vsaLinesToDraw.forEach(line => {
                     const y = candlestickSeries.priceToCoordinate(line.price);
@@ -923,16 +917,7 @@
 
                 candlestickSeries.setData(currentCandleData);
 
-                // Fetch MTF VSA primero para que el filtro ST lea los datos actualizados de 1H
-                await fetchMTFVsaData();
-
-                const vsaRes = analyzeVSAData(currentCandleData, periodoVol, factorVol);
-                vsaLinesToDraw = [];
-                if (vsaRes.lastSupport) vsaLinesToDraw.push(vsaRes.lastSupport);
-                if (vsaRes.lastResistance) vsaLinesToDraw.push(vsaRes.lastResistance);
-
-                calculateVPVR();
-
+                // Recalculate Supertrend
                 const { stMarkers, lastSignal } = getSupertrendMarkers(currentCandleData);
                 if (showSupertrend) {
                     candlestickSeries.setMarkers(stMarkers);
@@ -945,11 +930,18 @@
                     dashStSignal.className = lastSignal.type === 'BUY' ? 'txt-green' : 'txt-red';
                     dashStPrice.innerText = `$${lastSignal.price.toFixed(2)}`;
                     evaluateSupertrendAlert(lastSignal, tf);
-                } else {
-                    dashStSignal.innerText = "NO CONFLUENCIA";
-                    dashStSignal.className = "txt-yellow";
                 }
 
+                // Analyze VSA Main
+                const vsaRes = analyzeVSAData(currentCandleData, periodoVol, factorVol);
+                vsaLinesToDraw = [];
+                if (vsaRes.lastSupport) vsaLinesToDraw.push(vsaRes.lastSupport);
+                if (vsaRes.lastResistance) vsaLinesToDraw.push(vsaRes.lastResistance);
+
+                // Fetch MTF VSA
+                await fetchMTFVsaData();
+
+                calculateVPVR();
                 runPredictionEngine();
                 drawOverlay();
 
@@ -978,6 +970,7 @@
                     const analysis = analyzeVSAData(candles, periodoVol, factorVol, true);
                     mtfVsaCache[tf] = analysis;
                     
+                    // Update table
                     const row = document.getElementById(`row-${tf}`);
                     if (row && analysis.lastState) {
                         const st = analysis.lastState;
@@ -1027,8 +1020,6 @@
 
                 candlestickSeries.update(candle);
 
-                calculateVPVR();
-
                 const { stMarkers, lastSignal } = getSupertrendMarkers(currentCandleData);
                 if (showSupertrend) candlestickSeries.setMarkers(stMarkers);
 
@@ -1039,6 +1030,7 @@
                     evaluateSupertrendAlert(lastSignal, currentTF);
                 }
 
+                calculateVPVR();
                 runPredictionEngine();
                 drawOverlay();
             };
@@ -1050,6 +1042,7 @@
             };
         }
 
+        // Toggles
         btnSupertrend.addEventListener("click", () => {
             showSupertrend = !showSupertrend;
             btnSupertrend.classList.toggle("inactive", !showSupertrend);
@@ -1091,6 +1084,7 @@
             fetchHistory(currentTF);
         });
 
+        // Init
         fetchHistory(currentTF);
         connectWebSocket();
     });
