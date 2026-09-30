@@ -216,8 +216,11 @@
         <div class="controls-left">
             <span>TF:</span>
             <select id="timeframe" class="select-tf">
+                <option value="1m">1 Minuto</option>
+                <option value="3m">3 Minutos</option>
                 <option value="5m">5 Minutos</option>
                 <option value="15m" selected>15 Minutos</option>
+                <option value="30m">30 Minutos</option>
                 <option value="1h">1 Hora</option>
                 <option value="4h">4 Horas</option>
                 <option value="1d">1 Diario</option>
@@ -308,8 +311,11 @@
                         </tr>
                     </thead>
                     <tbody>
+                        <tr id="row-1m"><td>1 Minuto</td><td style="text-align: center;"><span class="badge-neu">NEU</span></td><td>--</td><td class="txt-green">--</td><td class="txt-red">--</td></tr>
+                        <tr id="row-3m"><td>3 Minutos</td><td style="text-align: center;"><span class="badge-neu">NEU</span></td><td>--</td><td class="txt-green">--</td><td class="txt-red">--</td></tr>
                         <tr id="row-5m"><td>5 Minutos</td><td style="text-align: center;"><span class="badge-neu">NEU</span></td><td>--</td><td class="txt-green">--</td><td class="txt-red">--</td></tr>
                         <tr id="row-15m"><td>15 Minutos</td><td style="text-align: center;"><span class="badge-neu">NEU</span></td><td>--</td><td class="txt-green">--</td><td class="txt-red">--</td></tr>
+                        <tr id="row-30m"><td>30 Minutos</td><td style="text-align: center;"><span class="badge-neu">NEU</span></td><td>--</td><td class="txt-green">--</td><td class="txt-red">--</td></tr>
                         <tr id="row-1h"><td>1 Hora</td><td style="text-align: center;"><span class="badge-neu">NEU</span></td><td>--</td><td class="txt-green">--</td><td class="txt-red">--</td></tr>
                         <tr id="row-4h"><td>4 Horas</td><td style="text-align: center;"><span class="badge-neu">NEU</span></td><td>--</td><td class="txt-green">--</td><td class="txt-red">--</td></tr>
                         <tr id="row-1d"><td>1 Diario</td><td style="text-align: center;"><span class="badge-neu">NEU</span></td><td>--</td><td class="txt-green">--</td><td class="txt-red">--</td></tr>
@@ -348,7 +354,7 @@
         let vsaLinesToDraw = [];
 
         let currentTF = "15m";
-        let ws = null; // Instancia del WebSocket
+        let ws = null;
 
         const statusEl = document.getElementById("status");
         const timeframeSelect = document.getElementById("timeframe");
@@ -549,7 +555,17 @@
         }
 
         function updateAIDashboard(stInfo) {
-            const tfWeights = { '1d': 0.35, '4h': 0.25, '1h': 0.20, '15m': 0.12, '5m': 0.08 };
+            const tfWeights = { 
+                '1d': 0.30, 
+                '4h': 0.20, 
+                '1h': 0.15, 
+                '30m': 0.12, 
+                '15m': 0.09, 
+                '5m': 0.06, 
+                '3m': 0.05, 
+                '1m': 0.03 
+            };
+            
             let weightedBullScore = 0;
             let weightedBearScore = 0;
 
@@ -660,11 +676,14 @@
                 lines.push({ price: localAnalysis.lastSupport.price, label: "Sop Chart", color: "#00e5ff", dash: [4, 4] });
             }
 
-            const tfs = ['5m', '15m', '1h', '4h', '1d'];
-            const labelsMap = { '5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1D' };
+            const tfs = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d'];
+            const labelsMap = { '1m': '1m', '3m': '3m', '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1H', '4h': '4H', '1d': '1D' };
             const colorsMap = {
+                '1m': { res: '#ff7300', sop: '#00e5ff' },
+                '3m': { res: '#ff00aa', sop: '#00e5ff' },
                 '5m': { res: '#e040fb', sop: '#00e5ff' },
                 '15m': { res: '#ff0055', sop: '#00e5ff' },
+                '30m': { res: '#ff2200', sop: '#2962ff' },
                 '1h': { res: '#ff0000', sop: '#2962ff' },
                 '4h': { res: '#d000ff', sop: '#a000ff' },
                 '1d': { res: '#ffaa00', sop: '#ffaa00' }
@@ -747,7 +766,6 @@
             }));
         }
 
-        // CONEXIÓN WEBSOCKET PARA TIEMPO REAL REAL
         function connectWebSocket(tf) {
             if (ws) {
                 ws.close();
@@ -778,10 +796,8 @@
                     volume: parseFloat(k.v)
                 };
 
-                // Actualizar o añadir la vela en el gráfico al instante
                 candlestickSeries.update(candle);
 
-                // Actualizar array local para indicadores
                 if (currentCandleData.length > 0) {
                     const lastIdx = currentCandleData.length - 1;
                     if (currentCandleData[lastIdx].time === candle.time) {
@@ -792,7 +808,6 @@
                     }
                 }
 
-                // Recalcular Supertrend e indicadores en vivo
                 const stInfo = getSupertrendMarkers(currentCandleData);
                 if (showSupertrend) candlestickSeries.setMarkers(stInfo.stMarkers);
 
@@ -812,7 +827,6 @@
             };
 
             ws.onclose = () => {
-                // Reconectar automáticamente si se interrumpe la conexión
                 setTimeout(() => {
                     if (statusEl.innerText !== "Cargando...") connectWebSocket(tf);
                 }, 3000);
@@ -820,7 +834,7 @@
         }
 
         async function updateMTFData() {
-            const tfs = ['5m', '15m', '1h', '4h', '1d'];
+            const tfs = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d'];
             for (let tf of tfs) {
                 try {
                     const cData = await fetchCandles(tf);
@@ -863,7 +877,6 @@
                 updateAIDashboard(stInfo);
                 drawOverlay();
 
-                // Conectar al canal de tiempo real
                 connectWebSocket(currentTF);
             } catch (err) {
                 statusEl.innerText = "Error Cargando";
@@ -924,7 +937,7 @@
 
         loadChartData();
         updateMTFData();
-        setInterval(updateMTFData, 30000); // Actualización de fondo de MTF cada 30s
+        setInterval(updateMTFData, 30000);
     });
     </script>
 </body>
