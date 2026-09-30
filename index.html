@@ -1,795 +1,453 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Bitcoin Trading Terminal - VPVR, Decision Engine & Supertrend</title>
-    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        
-        html, body { 
-            width: 100%; 
-            height: 100%; 
-            overflow: hidden; 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif; 
-            background-color: #000000; 
-            color: #d1d4dc; 
-            display: flex; 
-            flex-direction: column; 
-        }
-
-        /* BARRA SUPERIOR RESPONSIVA */
-        #top-bar { 
-            display: flex; 
-            align-items: center; 
-            justify-content: space-between; 
-            padding: 4px 12px; 
-            background-color: #131722; 
-            border-bottom: 1px solid #2a2e39; 
-            flex-shrink: 0; 
-            min-height: 44px;
-            font-size: 12px;
-            flex-wrap: wrap;
-            gap: 6px;
-        }
-
-        .controls-left { display: flex; align-items: center; gap: 8px; }
-        .controls-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-
-        .select-tf { 
-            background-color: #1e222d; 
-            color: #d1d4dc; 
-            border: 1px solid #363c4e; 
-            padding: 4px 6px; 
-            border-radius: 4px; 
-            font-size: 11px; 
-            cursor: pointer; 
-            outline: none;
-        }
-
-        .status-badge {
-            background-color: rgba(0, 230, 118, 0.15);
-            color: #00e676;
-            border: 1px solid #00e676;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 10px;
-            font-weight: bold;
-            transition: all 0.3s ease;
-            white-space: nowrap;
-        }
-
-        .btn-toggle {
-            background-color: #2962ff;
-            color: #ffffff;
-            border: none;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: 500;
-            cursor: pointer;
-            white-space: nowrap;
-        }
-        .btn-toggle.inactive { background-color: #2a2e39; color: #787b86; }
-
-        /* CONTENEDOR PRINCIPAL */
-        #main-container { 
-            display: flex; 
-            flex: 1; 
-            position: relative; 
-            overflow: hidden; 
-            width: 100%; 
-            height: 100%;
-        }
-
-        #chart-wrapper {
-            flex: 1;
-            height: 100%;
-            width: 100%;
-            position: relative;
-        }
-
-        #chart { 
-            width: 100%; 
-            height: 100%; 
-        }
-
-        #labels-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 5;
-        }
-
-        /* DASHBOARD FLOTANTE / UBICADO A LA IZQUIERDA */
-        #dashboard { 
-            position: absolute;
-            top: 10px;
-            left: 10px; /* Movido a la izquierda para liberar la escala de precio derecha */
-            right: auto;
-            z-index: 10;
-            display: flex; 
-            flex-direction: column; 
-            gap: 6px; 
-            max-height: calc(100% - 20px);
-            overflow-y: auto;
-            width: 270px; /* Reducido de 310px a 270px para ocupar menos espacio visual */
-            padding-right: 2px;
-        }
-
-        #dashboard::-webkit-scrollbar { width: 4px; }
-        #dashboard::-webkit-scrollbar-thumb { background: #2a2e39; border-radius: 2px; }
-
-        .vsa-table-container {
-            background-color: rgba(19, 23, 34, 0.92);
-            border: 1px solid #2962ff;
-            border-radius: 4px;
-            padding: 5px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.6);
-        }
-
-        .vsa-table { 
-            border-collapse: collapse; 
-            font-size: 10px; 
-            color: #d1d4dc;
-            width: 100%;
-        }
-
-        .vsa-table th { 
-            background-color: #2962ff; 
-            color: #ffffff; 
-            text-align: center; 
-            padding: 3px 4px; 
-            font-weight: 600; 
-            font-size: 9px;
-        }
-
-        .vsa-table td { 
-            padding: 3px 4px; 
-            text-align: right; 
-            font-size: 10px; 
-            border-bottom: 1px solid #1e222d;
-        }
-
-        .vsa-table td:first-child { text-align: left; font-weight: bold; color: #ffffff; }
-
-        .badge-buy { background-color: #00e676; color: #000; font-weight: bold; padding: 1px 3px; border-radius: 2px; font-size: 9px; }
-        .badge-sell { background-color: #ff1744; color: #fff; font-weight: bold; padding: 1px 3px; border-radius: 2px; font-size: 9px; }
-        .badge-neu { background-color: #434651; color: #d1d4dc; font-weight: bold; padding: 1px 3px; border-radius: 2px; font-size: 9px; }
-
-        .txt-green { color: #00e676; font-weight: bold; }
-        .txt-red { color: #ff1744; font-weight: bold; }
-        .txt-yellow { color: #ffd700; font-weight: bold; }
-        .txt-purple { color: #e040fb; font-weight: bold; }
-
-        .predict-card {
-            background: linear-gradient(135deg, rgba(20,26,40,0.92), rgba(10,13,20,0.92));
-            border: 1px solid #00e5ff;
-            border-radius: 6px;
-            padding: 6px;
-            font-size: 11px;
-            box-shadow: 0 4px 15px rgba(0, 229, 255, 0.15);
-        }
-        
-        .predict-title {
-            color: #00e5ff;
-            font-weight: bold;
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 4px;
-            border-bottom: 1px solid rgba(0, 229, 255, 0.2);
-            padding-bottom: 3px;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .predict-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 4px;
-            margin-top: 4px;
-            text-align: center;
-        }
-
-        .predict-box {
-            background: rgba(255,255,255,0.03);
-            border: 1px solid #2a2e39;
-            padding: 4px 2px;
-            border-radius: 4px;
-        }
-
-        .predict-tf { font-size: 9px; color: #787b86; margin-bottom: 2px; }
-        .predict-val { font-size: 10px; font-weight: bold; }
-
-        .decision-card {
-            background: rgba(19, 23, 34, 0.92);
-            border: 1px solid #2962ff;
-            border-radius: 6px;
-            padding: 6px;
-            font-size: 10px;
-        }
-
-        .range-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 2px 4px;
-            margin-top: 3px;
-            border-radius: 4px;
-            background: rgba(255, 255, 255, 0.02);
-            border-left: 3px solid #787b86;
-        }
-
-        .range-item.high { border-left-color: #00e676; }
-        .range-item.medium { border-left-color: #ffd700; }
-        .range-item.low { border-left-color: #ff1744; }
-
-        .range-pct { font-weight: bold; font-size: 10px; }
-        .range-desc { color: #b2b5be; font-size: 9px; text-align: right; }
-
-        .setup-card {
-            background: rgba(19, 23, 34, 0.92);
-            border: 1px solid #ffd700;
-            border-radius: 6px;
-            padding: 6px;
-            font-size: 10px;
-            box-shadow: 0 4px 15px rgba(255, 215, 0, 0.1);
-        }
-
-        .setup-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 2px 0;
-            border-bottom: 1px dashed rgba(255,255,255,0.05);
-        }
-
-        .setup-label { color: #787b86; font-size: 10px; }
-        .setup-value { font-weight: bold; font-size: 10px; }
-
-        .config-box {
-            background-color: rgba(19, 23, 34, 0.92);
-            border: 1px solid #2a2e39;
-            padding: 5px 6px;
-            border-radius: 4px;
-            font-size: 10px;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-        .config-row { display: flex; justify-content: space-between; align-items: center; }
-        .config-input { width: 45px; background: #2a2e39; border: 1px solid #363c4e; color: #fff; text-align: right; font-size: 10px; border-radius: 2px; }
-
-        @media (max-width: 768px) {
-            #top-bar {
-                padding: 6px;
-                height: auto;
-            }
-            .controls-left, .controls-right {
-                width: 100%;
-                justify-content: space-between;
-            }
-            .btn-toggle {
-                font-size: 10px;
-                padding: 4px 6px;
-                flex: 1;
-                text-align: center;
-            }
-            #dashboard {
-                position: absolute;
-                top: 0;
-                right: 0;
-                left: 0;
-                bottom: 0;
-                width: 100%;
-                max-height: 100%;
-                background: rgba(0, 0, 0, 0.85);
-                backdrop-filter: blur(4px);
-                padding: 12px;
-                display: none;
-            }
-        }
-    </style>
-</head>
-<body>
-
-    <div id="top-bar">
-        <div class="controls-left">
-            <span>TF:</span>
-            <select id="timeframe" class="select-tf">
-                <option value="5m">5M</option>
-                <option value="15m" selected>15M</option>
-                <option value="1h">1H</option>
-                <option value="4h">4H</option>
-                <option value="1d">1D</option>
-            </select>
-            <div id="status" class="status-badge">Conectando...</div>
-        </div>
-
-        <div class="controls-right">
-            <button id="btn-supertrend" class="btn-toggle">Supertrend</button>
-            <button id="btn-vpvr" class="btn-toggle">VPVR</button>
-            <button id="btn-vsa" class="btn-toggle">S/R VSA</button>
-            <button id="btn-signals" class="btn-toggle">Señales VSA</button>
-            <button id="btn-panel" class="btn-toggle">AI Panel</button>
-        </div>
-    </div>
-
-    <div id="main-container">
-        <div id="chart-wrapper">
-            <div id="chart"></div>
-            <canvas id="labels-overlay"></canvas>
-        </div>
-
-        <div id="dashboard">
-            <div id="predict-panel" class="predict-card">
-                <div class="predict-title">
-                    <span>Proyección Algorítmica AI</span>
-                    <span id="ai-status" style="color: #00e676;">LIVE</span>
-                </div>
-                <div style="font-size: 9px; color: #b2b5be; margin-bottom: 4px;" id="ai-summary">
-                    Analizando interacciones con liquidez...
-                </div>
-                <div class="predict-grid">
-                    <div class="predict-box">
-                        <div class="predict-tf">15M</div>
-                        <div id="p-15m" class="predict-val txt-yellow">CALC</div>
-                        <div id="prob-15m" style="font-size: 8px; color: #787b86;">--%</div>
-                    </div>
-                    <div class="predict-box">
-                        <div class="predict-tf">1H</div>
-                        <div id="p-1h" class="predict-val txt-yellow">CALC</div>
-                        <div id="prob-1h" style="font-size: 8px; color: #787b86;">--%</div>
-                    </div>
-                    <div class="predict-box">
-                        <div class="predict-tf">4H</div>
-                        <div id="p-4h" class="predict-val txt-yellow">CALC</div>
-                        <div id="prob-4h" style="font-size: 8px; color: #787b86;">--%</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="decision-card">
-                <div class="predict-title" style="color: #2962ff; border-bottom-color: rgba(41, 98, 255, 0.2);">
-                    <span>Guía de Decisiones</span>
-                </div>
-                
-                <div class="range-item high">
-                    <div><span class="range-pct txt-green">85%–95%</span></div>
-                    <div class="range-desc"><b>Entrada Ideal</b><br><span style="font-size: 8px; color: #00e676;">Confluencia Alta</span></div>
-                </div>
-
-                <div class="range-item medium">
-                    <div><span class="range-pct txt-yellow">70%–84%</span></div>
-                    <div class="range-desc"><b>Confirmada</b><br><span style="font-size: 8px; color: #ffd700;">Vela Rechazo</span></div>
-                </div>
-
-                <div class="range-item low">
-                    <div><span class="range-pct txt-red">50%–69%</span></div>
-                    <div class="range-desc"><b>Fuera</b><br><span style="font-size: 8px; color: #ff1744;">Zona Neutra</span></div>
-                </div>
-            </div>
-
-            <div id="dash-module-supertrend" class="config-box" style="border-color: #00e676;">
-                <div class="config-row">
-                    <span style="color:#00e676; font-weight:bold;">SUPERTREND</span>
-                </div>
-                <div class="config-row">
-                    <span>Señal:</span>
-                    <span id="dash-st-signal" class="txt-yellow">--</span>
-                </div>
-                <div class="config-row">
-                    <span>Precio Entrada:</span>
-                    <span id="dash-st-price" class="setup-value">--</span>
-                </div>
-            </div>
-
-            <div id="setup-panel" class="setup-card">
-                <div class="predict-title" style="color: #ffd700; border-bottom-color: rgba(255, 215, 0, 0.2);">
-                    <span>Trade Setup</span>
-                    <span id="setup-type" class="txt-yellow">BUSCANDO...</span>
-                </div>
-                <div class="setup-row">
-                    <span class="setup-label">Entrada (LIMIT):</span>
-                    <span id="setup-entry" class="setup-value txt-yellow">--</span>
-                </div>
-                <div class="setup-row">
-                    <span class="setup-label">Stop Loss:</span>
-                    <span id="setup-sl" class="setup-value txt-red">--</span>
-                </div>
-                <div class="setup-row">
-                    <span class="setup-label">Take Profit 1:</span>
-                    <span id="setup-tp1" class="setup-value txt-green">--</span>
-                </div>
-                <div class="setup-row">
-                    <span class="setup-label">Take Profit 2:</span>
-                    <span id="setup-tp2" class="setup-value txt-green">--</span>
-                </div>
-                <div class="setup-row">
-                    <span class="setup-label">POC:</span>
-                    <span id="setup-poc" class="setup-value txt-purple">--</span>
-                </div>
-                <div class="setup-row" style="border-bottom: none; padding-top: 4px;">
-                    <span class="setup-label">Riesgo/Beneficio:</span>
-                    <span id="setup-rr" class="setup-value txt-yellow">1 : --</span>
-                </div>
-            </div>
-
-            <div id="panel-vsa-mtf" class="vsa-table-container">
-                <table class="vsa-table">
-                    <thead>
-                        <tr>
-                            <th>TF</th>
-                            <th>VSA</th>
-                            <th>Volumen</th>
-                            <th>% Compra</th>
-                            <th>% Venta</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr id="row-5m"><td>5m</td><td style="text-align: center;"><span class="badge-neu">NEU</span></td><td>--</td><td class="txt-green">--</td><td class="txt-red">--</td></tr>
-                        <tr id="row-15m"><td>15m</td><td style="text-align: center;"><span class="badge-neu">NEU</span></td><td>--</td><td class="txt-green">--</td><td class="txt-red">--</td></tr>
-                        <tr id="row-1h"><td>1h</td><td style="text-align: center;"><span class="badge-neu">NEU</span></td><td>--</td><td class="txt-green">--</td><td class="txt-red">--</td></tr>
-                        <tr id="row-4h"><td>4h</td><td style="text-align: center;"><span class="badge-neu">NEU</span></td><td>--</td><td class="txt-green">--</td><td class="txt-red">--</td></tr>
-                        <tr id="row-1d"><td>1d</td><td style="text-align: center;"><span class="badge-neu">NEU</span></td><td>--</td><td class="txt-green">--</td><td class="txt-red">--</td></tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <div class="config-box">
-                <div class="config-row">
-                    <span style="color:#787b86; font-weight:bold;">CONFIG. VSA</span>
-                </div>
-                <div class="config-row">
-                    <span>Período Prom:</span>
-                    <input type="number" id="input-period" class="config-input" value="20">
-                </div>
-                <div class="config-row">
-                    <span>Mult. Ballena:</span>
-                    <input type="number" id="input-factor" class="config-input" value="1.8" step="0.1">
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script>
-    document.addEventListener("DOMContentLoaded", function () {
-        const TELEGRAM_CONFIG = { enabled: true, username: "ERC1670" };
-
-        let showSupertrend = true;
-        let showVsaLines = true;
-        let showVsaSignals = true;
-        let showVPVR = true;
-
-        let periodoVol = 20;
-        let factorVol = 1.8;
-
-        let currentCandleData = [];
-        let mtfVsaCache = {};
-        let vsaLinesToDraw = [];
-        
-        let tradeSetupData = { entry: null, sl: null, tp1: null, tp2: null };
-        let vpvrData = { buckets: [], pocPrice: null, maxVol: 0 };
-        
-        let lastNotifiedSignalTime = null;
-        let lastNotifiedSignalType = null;
-        let audioCtx = null;
-
-        let ws = null;
-        let pingInterval = null;
-        let reconnectTimeout = null;
-        let currentTF = "15m";
-
-        const statusEl = document.getElementById("status");
-        const timeframeSelect = document.getElementById("timeframe");
-        const chartContainer = document.getElementById("chart");
-        const overlay = document.getElementById("labels-overlay");
-        const ctx = overlay.getContext("2d");
-
-        const btnSupertrend = document.getElementById("btn-supertrend");
-        const btnVsa = document.getElementById("btn-vsa");
-        const btnSignals = document.getElementById("btn-signals");
-        const btnVpvr = document.getElementById("btn-vpvr");
-        const btnPanel = document.getElementById("btn-panel");
-
-        const dashStSignal = document.getElementById("dash-st-signal");
-        const dashStPrice = document.getElementById("dash-st-price");
-
-        const inputPeriod = document.getElementById("input-period");
-        const inputFactor = document.getElementById("input-factor");
-
-        function initAudioContext() {
-            if (!audioCtx) {
-                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-                if (AudioContextClass) audioCtx = new AudioContextClass();
-            }
-            if (audioCtx && audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
-        }
-        document.addEventListener('click', initAudioContext, { once: true });
-
-        function playBeepSound(type) {
-            try {
-                initAudioContext();
-                if (!audioCtx) return;
-
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.connect(gain);
-                gain.connect(audioCtx.destination);
-                if (type === "BUY") {
-                    osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.3);
-                } else {
-                    osc.frequency.setValueAtTime(600, audioCtx.currentTime);
-                    osc.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.3);
-                }
-                gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-                osc.start(audioCtx.currentTime);
-                osc.stop(audioCtx.currentTime + 0.3);
-            } catch (e) {
-                console.warn("Audio error:", e);
-            }
-        }
-
-        function sendTelegramAlert(signalType, price, timeframe) {
-            if (!TELEGRAM_CONFIG.enabled || !TELEGRAM_CONFIG.username) return;
-            const icon = signalType === "BUY" ? "🟢🚀" : "🔴🐻";
-            
-            const message = `ALERT SUPERTREND BTCUSDT\n\nSeñal: ${signalType} ${icon}\nPrecio Entrada: $${price.toFixed(2)}\nTimeframe: ${timeframe}`;
-            const userClean = TELEGRAM_CONFIG.username.replace("@", "");
-            const encodedMsg = encodeURIComponent(message);
-            fetch(`https://api.callmebot.com/text.php?user=@${userClean}&text=${encodedMsg}`, { mode: 'no-cors' })
-                .catch(err => console.error("Error Telegram:", err));
-        }
-
-        function evaluateSupertrendAlert(lastSignal, timeframe) {
-            if (!lastSignal || !lastSignal.time) return;
-            if (lastSignal.time !== lastNotifiedSignalTime || lastSignal.type !== lastNotifiedSignalType) {
-                lastNotifiedSignalTime = lastSignal.time;
-                lastNotifiedSignalType = lastSignal.type;
-                
-                playBeepSound(lastSignal.type);
-                sendTelegramAlert(lastSignal.type, lastSignal.price, timeframe);
-            }
-        }
-
-        function getSupertrendMarkers(candles, atrPeriods = 14, multiplier = 2.0) {
-            if (!candles || candles.length < atrPeriods + 1) return { stMarkers: [], lastSignal: null };
-            const len = candles.length;
-            const tr = new Float64Array(len);
-            tr[0] = candles[0].high - candles[0].low;
-
-            for (let i = 1; i < len; i++) {
-                tr[i] = Math.max(
-                    candles[i].high - candles[i].low,
-                    Math.abs(candles[i].high - candles[i - 1].close),
-                    Math.abs(candles[i].low - candles[i - 1].close)
-                );
-            }
-
-            const atr = new Float64Array(len);
-            let sumTR = 0;
-            for (let i = 0; i < atrPeriods; i++) sumTR += tr[i];
-            atr[atrPeriods - 1] = sumTR / atrPeriods;
-            for (let i = atrPeriods; i < len; i++) atr[i] = (atr[i - 1] * (atrPeriods - 1) + tr[i]) / atrPeriods;
-
-            const up = new Float64Array(len), dn = new Float64Array(len), trend = new Int32Array(len);
-            let currentTrend = 1;
-
-            for (let i = 0; i < len; i++) {
-                const src = (candles[i].high + candles[i].low) / 2;
-                let basicUp = src - (multiplier * atr[i]), basicDn = src + (multiplier * atr[i]);
-
-                if (i === 0) { up[i] = basicUp; dn[i] = basicDn; trend[i] = 1; continue; }
-
-                up[i] = candles[i - 1].close > up[i - 1] ? Math.max(basicUp, up[i - 1]) : basicUp;
-                dn[i] = candles[i - 1].close < dn[i - 1] ? Math.min(basicDn, dn[i - 1]) : basicDn;
-
-                if (trend[i - 1] === -1 && candles[i].close > dn[i - 1]) currentTrend = 1;
-                else if (trend[i - 1] === 1 && candles[i].close < up[i - 1]) currentTrend = -1;
-                else currentTrend = trend[i - 1];
-
-                trend[i] = currentTrend;
-            }
-
-            const stMarkers = [];
-            let lastSignal = null;
-
-            for (let i = 1; i < len; i++) {
-                if (trend[i] === 1 && trend[i - 1] === -1) {
-                    stMarkers.push({ time: candles[i].time, position: 'belowBar', color: '#00e676', shape: 'arrowUp', text: 'ST BUY' });
-                    lastSignal = { type: 'BUY', price: candles[i].close, time: candles[i].time };
-                } else if (trend[i] === -1 && trend[i - 1] === 1) {
-                    stMarkers.push({ time: candles[i].time, position: 'aboveBar', color: '#ff1744', shape: 'arrowDown', text: 'ST SELL' });
-                    lastSignal = { type: 'SELL', price: candles[i].close, time: candles[i].time };
-                }
-            }
-            return { stMarkers, lastSignal };
-        }
-
-        const chart = LightweightCharts.createChart(chartContainer, {
-            width: chartContainer.clientWidth,
-            height: chartContainer.clientHeight,
-            layout: { background: { type: 'solid', color: '#000000' }, textColor: '#d1d4dc' },
-            grid: { vertLines: { color: '#161923' }, horzLines: { color: '#161923' } },
-            timeScale: { borderColor: '#2a2e39', timeVisible: true, secondsVisible: false, rightOffset: 15 },
-            rightPriceScale: { borderColor: '#2a2e39', autoScale: true }
-        });
-
-        const candlestickSeries = chart.addCandlestickSeries({
-            upColor: '#089981', downColor: '#f23645', borderVisible: false, wickUpColor: '#089981', wickDownColor: '#f23645'
-        });
-
-        function updateStatus(text, color, bgColor) {
-            statusEl.innerText = text;
-            statusEl.style.color = color;
-            statusEl.style.borderColor = color;
-            statusEl.style.backgroundColor = bgColor;
-        }
-
-        function resizeCanvas() {
-            overlay.width = chartContainer.clientWidth;
-            overlay.height = chartContainer.clientHeight;
-            drawOverlay();
-        }
-
-        const resizeObserver = new ResizeObserver(entries => {
-            if (!entries || entries.length === 0) return;
-            const { width, height } = entries[0].contentRect;
-            chart.applyOptions({ width, height });
-            resizeCanvas();
-        });
-        resizeObserver.observe(chartContainer);
-
-        chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
-            calculateVPVR();
-            drawOverlay();
-        });
-
-        function analyzeVSAData(candles, period, factor, isMTF = false) {
-            if (!candles || candles.length < period + 1) return { events: [], lastSupport: null, lastResistance: null, lastState: null };
-
-            const targetCandles = isMTF ? candles.slice(0, -1) : candles;
-
-            let events = [];
-            let lastSupport = null;
-            let lastResistance = null;
-            let lastState = null;
-
-            for (let i = period; i < targetCandles.length; i++) {
-                let sumVol = 0;
-                for (let j = i - period; j < i; j++) {
-                    sumVol += targetCandles[j].volume;
-                }
-                const avgVol = sumVol / period;
-                const candle = targetCandles[i];
-
-                const range = candle.high - candle.low;
-                const effVol = (candle.volume === 0 || isNaN(candle.volume)) ? 1.0 : candle.volume;
-                const isWhale = effVol > (avgVol * factor);
-
-                const volBuy = range === 0 ? effVol / 2 : effVol * ((candle.close - candle.low) / range);
-                const volSell = effVol - volBuy;
-                const deltaNet = volBuy - volSell;
-
-                const mInf = Math.min(candle.open, candle.close) - candle.low;
-                const mSup = candle.high - Math.max(candle.open, candle.close);
-
-                const isBuy = isWhale && (deltaNet > 0 || mInf > (range * 0.35));
-                const isSell = isWhale && (deltaNet < 0 || mSup > (range * 0.35));
-
-                if (isBuy) {
-                    const ev = { index: i, time: candle.time, type: 'BUY', price: candle.low, vol: effVol };
-                    events.push(ev);
-                    lastSupport = ev;
-                } else if (isSell) {
-                    const ev = { index: i, time: candle.time, type: 'SELL', price: candle.high, vol: effVol };
-                    events.push(ev);
-                    lastResistance = ev;
-                }
-
-                if (i === targetCandles.length - 1) {
-                    const lastEvent = events.length > 0 ? events[events.length - 1] : null;
-                    lastState = {
-                        isBuy: lastEvent ? lastEvent.type === 'BUY' : false,
-                        isSell: lastEvent ? lastEvent.type === 'SELL' : false,
-                        volume: effVol,
-                        pctBuy: ((volBuy / effVol) * 100).toFixed(1),
-                        pctSell: ((volSell / effVol) * 100).toFixed(1)
-                    };
-                }
-            }
-
-            return { events, lastSupport, lastResistance, lastState };
-        }
-
-        function calculateVPVR() {
-            if (!showVPVR || currentCandleData.length === 0) return;
-
-            const range = chart.timeScale().getVisibleLogicalRange();
-            if (!range) return;
-
-            const startIdx = Math.max(0, Math.floor(range.from));
-            const endIdx = Math.min(currentCandleData.length - 1, Math.ceil(range.to));
-
-            if (startIdx >= endIdx) return;
-
-            const visibleCandles = currentCandleData.slice(startIdx, endIdx + 1);
-
-            let minPrice = Infinity;
-            let maxPrice = -Infinity;
-
-            visibleCandles.forEach(c => {
-                if (c.low < minPrice) minPrice = c.low;
-                if (c.high > maxPrice) maxPrice = c.high;
-            });
-
-            if (minPrice === Infinity || maxPrice === -Infinity) return;
-
-            const numBuckets = 40;
-            const bucketSize = (maxPrice - minPrice) / numBuckets;
-            let buckets = new Array(numBuckets).fill(0);
-
-            visibleCandles.forEach(c => {
-                const midPrice = (c.high + c.low) / 2;
-                let bIdx = Math.floor((midPrice - minPrice) / bucketSize);
-                if (bIdx >= numBuckets) bIdx = numBuckets - 1;
-                if (bIdx < 0) bIdx = 0;
-                buckets[bIdx] += c.volume;
-            });
-
-            let maxVol = 0;
-            let pocIdx = 0;
-
-            buckets.forEach((v, idx) => {
-                if (v > maxVol) {
-                    maxVol = v;
-                    pocIdx = idx;
-                }
-            });
-
-            const pocPrice = minPrice + (pocIdx * bucketSize) + (bucketSize / 2);
-
-            vpvrData = {
-                buckets: buckets.map((vol, idx) => ({
-                    priceLow: minPrice + (idx * bucketSize),
-                    priceHigh: minPrice + ((idx + 1) * bucketSize),
-                    volume: vol
-                })),
-                pocPrice: pocPrice,
-                maxVol: maxVol
-            };
-
-            const elPoc = document.getElementById("setup-poc");
-            if (elPoc) elPoc.innerText = pocPrice.toFixed(2);
-        }
-
-        function runPredictionEngine() {
-            if (currentCandleData.length === 0) return;
-
-            const currentPrice = currentCandleData[currentCandleData.length - 1].close;
-            const tfs = ['15m', '1h', '4h'];
-            let predictions = {};
-
-            let totalBias = 0;
-            let nearestZoneDist = Infinity;
-            let nearestZoneType = null;
-            let nearestZonePrice = null;
-
-            let activeSupports = [];
-            let activeResistances = [];
-
-            tfs.forEach(tf => {
-                const cache = mtfVsaCache[tf];
-                if (!cache) return;
-
-                if (cache.lastSupport) activeSupports.push(cache.lastSupport.price);
-                if (cache.lastResistance) activeResistances.push(cache.lastR
+//+------------------------------------------------------------------+
+//|                                         TradingTerminalPanel.mq5 |
+//|                                  Copyright 2026, Tu Nombre       |
+//+------------------------------------------------------------------+
+#property copyright "Trading Terminal AI"
+#property indicator_chart_window
+#property indicator_plots 0
+
+//--- Parámetros
+input group "=== Configuración Panel ==="
+input int      InpPanelWidth  = 260;         // Ancho del panel (px)
+input color    InpBgColor     = C'19,23,34';   // Color Fondo Panel
+input color    InpBorderColor = C'41,98,255';  // Color Borde
+
+input group "=== Configuración Supertrend & VSA ==="
+input int      InpSTPeriod    = 10;          // Período Supertrend
+input double   InpSTMultiplier= 3.0;         // Multiplicador ST
+input int      InpVSAPeriod   = 20;          // Período Prom. VSA
+input double   InpVSAFactor   = 1.8;         // Factor VSA Ballena
+
+input group "=== Configuración VPVR ==="
+input bool     InpShowVPVR    = true;        // Mostrar VPVR
+input int      InpVPVRBars    = 150;         // Velas para VPVR
+input int      InpVPVRLevels  = 30;          // Niveles VPVR
+
+//--- Variables Globales
+int      panelX = 10;
+int      panelY = 10;
+string   prefix = "TTP_";
+
+//+------------------------------------------------------------------+
+//| OnInit                                                           |
+//+------------------------------------------------------------------+
+int OnInit()
+  {
+   ChartSetInteger(0, CHART_SHIFT, true);
+   ChartSetDouble(0, CHART_SHIFT_SIZE, 18.0); // Margen derecho para VPVR
+   
+   CreateDashboardUI();
+   UpdateDashboardData();
+
+   return(INIT_SUCCEEDED);
+  }
+
+//+------------------------------------------------------------------+
+//| OnDeinit                                                         |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+  {
+   ObjectsDeleteAll(0, prefix);
+   ChartRedraw(0);
+  }
+
+//+------------------------------------------------------------------+
+//| OnCalculate                                                      |
+//+------------------------------------------------------------------+
+int OnCalculate(const int rates_total,
+                const int prev_calculated,
+                const datetime &time[],
+                const double &open[],
+                const double &high[],
+                const double &low[],
+                const double &close[],
+                const long &tick_volume[],
+                const long &volume[],
+                const int &spread[])
+  {
+   UpdateDashboardData();
+   CalculateSignalsAndLevels();
+   if(InpShowVPVR) DrawRightVPVR();
+   
+   return(rates_total);
+  }
+
+//+------------------------------------------------------------------+
+//| CÁLCULO DE SEÑALES (ST + VSA) Y ETIQUETAS DERECHAS               |
+//+------------------------------------------------------------------+
+void CalculateSignalsAndLevels()
+  {
+   int lookback = 200;
+   MqlRates rates[];
+   ArraySetAsSeries(rates, true);
+   if(CopyRates(_Symbol, _Period, 0, lookback, rates) < lookback) return;
+
+   // Promedio de Volumen VSA
+   double sumVol = 0;
+   for(int v = 1; v <= InpVSAPeriod; v++) sumVol += (double)rates[v].tick_volume;
+   double avgVol = sumVol / InpVSAPeriod;
+
+   double stLine[], trend[];
+   ArrayResize(stLine, lookback);
+   ArrayResize(trend, lookback);
+   ArrayInitialize(stLine, 0.0);
+   ArrayInitialize(trend, 1.0);
+
+   for(int i = lookback - InpSTPeriod - 1; i >= 0; i--)
+     {
+      double atr = 0;
+      for(int k = 0; k < InpSTPeriod; k++) atr += (rates[i + k].high - rates[i + k].low);
+      atr /= InpSTPeriod;
+
+      double median = (rates[i].high + rates[i].low) / 2.0;
+      double upBand = median + (InpSTMultiplier * atr);
+      double dnBand = median - (InpSTMultiplier * atr);
+
+      if(trend[i + 1] == 1)
+        {
+         stLine[i] = MathMax(dnBand, stLine[i + 1]);
+         if(rates[i].close < stLine[i]) { trend[i] = -1; stLine[i] = upBand; }
+         else trend[i] = 1;
+        }
+      else
+        {
+         stLine[i] = MathMin(upBand, stLine[i + 1]);
+         if(rates[i].close > stLine[i]) { trend[i] = 1; stLine[i] = dnBand; }
+         else trend[i] = -1;
+        }
+
+      // 1. Señales Supertrend (ST BUY / ST SELL)
+      if(trend[i] != trend[i + 1])
+        {
+         string stName = prefix + "ST_ARR_" + TimeToString(rates[i].time);
+         if(trend[i] == 1)
+            CreateSignalText(stName, rates[i].time, rates[i].low - (atr * 0.4), "ST BUY", C'0,230,118', 233);
+         else
+            CreateSignalText(stName, rates[i].time, rates[i].high + (atr * 0.4), "ST SELL", C'255,23,68', 234);
+        }
+
+      // 2. Señales VSA (VSA BUY / VSA SELL en picos de volumen)
+      double curVol = (double)rates[i].tick_volume;
+      if(curVol > (avgVol * InpVSAFactor))
+        {
+         double range = rates[i].high - rates[i].low;
+         if(range > 0)
+           {
+            double buyRatio = (rates[i].close - rates[i].low) / range;
+            string vsaName = prefix + "VSA_ARR_" + TimeToString(rates[i].time);
+            if(buyRatio > 0.6)
+               CreateSignalText(vsaName, rates[i].time, rates[i].low - (atr * 0.8), "VSA BUY", C'0,230,118', 233);
+            else if(buyRatio < 0.4)
+               CreateSignalText(vsaName, rates[i].time, rates[i].high + (atr * 0.8), "VSA SELL", C'255,23,68', 234);
+           }
+        }
+     }
+
+   // Actualizar Panel
+   ObjectSetString(0, prefix + "ST_Signal", OBJPROP_TEXT, (trend[0] == 1) ? "BUY" : "SELL");
+   ObjectSetInteger(0, prefix + "ST_Signal", OBJPROP_COLOR, (trend[0] == 1) ? C'0,230,118' : C'255,23,68');
+   ObjectSetString(0, prefix + "ST_Price", OBJPROP_TEXT, "$" + DoubleToString(stLine[0], 2));
+
+   // Dibujar Niveles Entrada/SL/TP con etiquetas flotantes a la derecha
+   DrawTradeSetupLevels(rates[0].close);
+  }
+
+void CreateSignalText(string name, datetime time, double price, string text, color col, int arrowCode)
+  {
+   if(ObjectFind(0, name) < 0)
+     {
+      ObjectCreate(0, name, OBJ_ARROW, 0, time, price);
+      ObjectSetInteger(0, name, OBJPROP_ARROWCODE, arrowCode);
+      ObjectSetInteger(0, name, OBJPROP_COLOR, col);
+      ObjectSetInteger(0, name, OBJPROP_WIDTH, 2);
+      ObjectSetString(0, name, OBJPROP_TEXT, text);
+      ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| NIVELES SETUP (LINEAS + ETIQUETAS A LA DERECHA)                  |
+//+------------------------------------------------------------------+
+void DrawTradeSetupLevels(double closePrice)
+  {
+   double atr = _Point * 300;
+   MqlRates rates[];
+   ArraySetAsSeries(rates, true);
+   if(CopyRates(_Symbol, _Period, 1, 14, rates) >= 14)
+     {
+      double sum = 0;
+      for(int i=0; i<14; i++) sum += (rates[i].high - rates[i].low);
+      atr = sum / 14.0;
+     }
+
+   double entry = closePrice;
+   double sl    = closePrice - (atr * 1.5);
+   double tp1   = closePrice + (atr * 2.25);
+   double tp2   = closePrice + (atr * 4.5);
+
+   SetLevelLine("ENTRY", entry, "ENTRY", C'255,215,0');
+   SetLevelLine("SL",    sl,    "SL",    C'255,23,68');
+   SetLevelLine("TP1",   tp1,   "TP1",   C'0,230,118');
+   SetLevelLine("TP2",   tp2,   "TP2",   C'0,230,118');
+
+   ObjectSetString(0, prefix + "SETUP_ENTRY", OBJPROP_TEXT, DoubleToString(entry, _Digits));
+   ObjectSetString(0, prefix + "SETUP_SL",    OBJPROP_TEXT, DoubleToString(sl, _Digits));
+   ObjectSetString(0, prefix + "SETUP_TP1",   OBJPROP_TEXT, DoubleToString(tp1, _Digits));
+   ObjectSetString(0, prefix + "SETUP_TP2",   OBJPROP_TEXT, DoubleToString(tp2, _Digits));
+  }
+
+void SetLevelLine(string id, double price, string labelText, color col)
+  {
+   string lineName = prefix + "LVL_" + id;
+   if(ObjectFind(0, lineName) < 0)
+     {
+      ObjectCreate(0, lineName, OBJ_HLINE, 0, 0, price);
+      ObjectSetInteger(0, lineName, OBJPROP_STYLE, STYLE_DASHDOT);
+      ObjectSetInteger(0, lineName, OBJPROP_WIDTH, 1);
+      ObjectSetInteger(0, lineName, OBJPROP_SELECTABLE, false);
+     }
+   ObjectMove(0, lineName, 0, 0, price);
+   ObjectSetInteger(0, lineName, OBJPROP_COLOR, col);
+  }
+
+//+------------------------------------------------------------------+
+//| VPVR DERECHA (PAGINADO A LA DERECHA DEL GRÁFICO)                 |
+//+------------------------------------------------------------------+
+void DrawRightVPVR()
+  {
+   ObjectsDeleteAll(0, prefix + "VPVR_");
+
+   MqlRates rates[];
+   ArraySetAsSeries(rates, true);
+   int copied = CopyRates(_Symbol, _Period, 0, InpVPVRBars, rates);
+   if(copied < InpVPVRBars) return;
+
+   double maxPrice = -1.0, minPrice = 999999.0;
+   for(int i = 0; i < copied; i++)
+     {
+      if(rates[i].high > maxPrice) maxPrice = rates[i].high;
+      if(rates[i].low < minPrice)  minPrice = rates[i].low;
+     }
+
+   if(maxPrice <= minPrice) return;
+
+   double step = (maxPrice - minPrice) / InpVPVRLevels;
+   double volBucket[];
+   ArrayResize(volBucket, InpVPVRLevels);
+   ArrayInitialize(volBucket, 0.0);
+
+   double maxVol = 0.0;
+   int pocIndex = 0;
+
+   for(int i = 0; i < copied; i++)
+     {
+      double mid = (rates[i].high + rates[i].low) / 2.0;
+      int idx = (int)((mid - minPrice) / step);
+      if(idx >= InpVPVRLevels) idx = InpVPVRLevels - 1;
+      if(idx < 0) idx = 0;
+
+      volBucket[idx] += (double)rates[i].tick_volume;
+      if(volBucket[idx] > maxVol)
+        {
+         maxVol = volBucket[idx];
+         pocIndex = idx;
+        }
+     }
+
+   // Dibujar barras del histograma en el margen derecho
+   datetime lastTime = rates[0].time;
+   int secPerBar = PeriodSeconds(_Period);
+
+   for(int j = 0; j < InpVPVRLevels; j++)
+     {
+      if(volBucket[j] <= 0) continue;
+
+      double pLow  = minPrice + (j * step);
+      double pHigh = pLow + step;
+
+      int barLen = (int)((volBucket[j] / maxVol) * 15.0); 
+      datetime barStart = lastTime + secPerBar * 2;
+      datetime barEnd   = barStart + secPerBar * MathMax(barLen, 1);
+
+      string bName = prefix + "VPVR_BAR_" + IntegerToString(j);
+      ObjectCreate(0, bName, OBJ_RECTANGLE, 0, barStart, pHigh, barEnd, pLow);
+      ObjectSetInteger(0, bName, OBJPROP_COLOR, (j == pocIndex) ? C'224,64,251' : C'41,98,255');
+      ObjectSetInteger(0, bName, OBJPROP_FILL, true);
+      ObjectSetInteger(0, bName, OBJPROP_BACK, true);
+      ObjectSetInteger(0, bName, OBJPROP_SELECTABLE, false);
+     }
+
+   double pocPrice = minPrice + (pocIndex * step) + (step / 2.0);
+   ObjectSetString(0, prefix + "SETUP_POC", OBJPROP_TEXT, DoubleToString(pocPrice, _Digits));
+  }
+
+//+------------------------------------------------------------------+
+//| PANEL COMPLETO ESTILO HTML (IZQUIERDA)                           |
+//+------------------------------------------------------------------+
+void CreateDashboardUI()
+  {
+   int currentY = panelY;
+
+   // Fondo
+   CreateRectangle(prefix + "BG", panelX, currentY, InpPanelWidth, 540, InpBgColor, InpBorderColor);
+
+   // Título AI
+   CreateLabel(prefix + "AI_Title", "PROYECCIÓN ALGORÍTMICA AI", panelX + 10, currentY + 10, C'0,229,255', 8, true);
+   CreateLabel(prefix + "AI_Live", "LIVE", panelX + InpPanelWidth - 35, currentY + 10, C'0,230,118', 8, true);
+   
+   currentY += 28;
+
+   int boxW = (InpPanelWidth - 28) / 3;
+   CreateBoxTF("15M", "BEAR", panelX + 8, currentY, boxW, "p_15m", C'255,23,68');
+   CreateBoxTF("1H", "BEAR", panelX + 12 + boxW, currentY, boxW, "p_1h", C'255,23,68');
+   CreateBoxTF("4H", "RANGO", panelX + 16 + (boxW*2), currentY, boxW, "p_4h", C'255,215,0');
+
+   currentY += 50;
+
+   // Guía de Decisiones
+   CreateRectangle(prefix + "GD_Box", panelX + 8, currentY, InpPanelWidth - 16, 65, InpBgColor, C'41,98,255');
+   CreateLabel(prefix + "GD_Title", "GUÍA DE DECISIONES", panelX + 14, currentY + 4, C'41,98,255', 7, true);
+   
+   CreateLabel(prefix + "GD_R1", "85%–95%", panelX + 14, currentY + 20, C'0,230,118', 8, true);
+   CreateLabel(prefix + "GD_T1", "Entrada Ideal (Confluencia Alta)", panelX + 85, currentY + 20, C'120,123,134', 7);
+
+   CreateLabel(prefix + "GD_R2", "70%–84%", panelX + 14, currentY + 34, C'255,215,0', 8, true);
+   CreateLabel(prefix + "GD_T2", "Confirmada (Vela Rechazo)", panelX + 85, currentY + 34, C'120,123,134', 7);
+
+   CreateLabel(prefix + "GD_R3", "50%–69%", panelX + 14, currentY + 48, C'255,23,68', 8, true);
+   CreateLabel(prefix + "GD_T3", "Fuera (Zona Neutra)", panelX + 85, currentY + 48, C'120,123,134', 7);
+
+   currentY += 73;
+
+   // Supertrend
+   CreateRectangle(prefix + "ST_Box", panelX + 8, currentY, InpPanelWidth - 16, 38, InpBgColor, C'0,230,118');
+   CreateLabel(prefix + "ST_Title", "SUPERTREND", panelX + 14, currentY + 4, C'0,230,118', 7, true);
+   CreateLabel(prefix + "ST_Sig_Lbl", "Señal:", panelX + 14, currentY + 18, C'209,212,220', 8);
+   CreateLabel(prefix + "ST_Signal", "BUY", panelX + 55, currentY + 18, C'0,230,118', 8, true);
+   CreateLabel(prefix + "ST_Price", "$0.00", panelX + 160, currentY + 18, C'209,212,220', 8, true);
+
+   currentY += 46;
+
+   // Trade Setup
+   CreateRectangle(prefix + "SETUP_Box", panelX + 8, currentY, InpPanelWidth - 16, 110, InpBgColor, C'255,215,0');
+   CreateLabel(prefix + "SETUP_Title", "TRADE SETUP (SHORT)", panelX + 14, currentY + 6, C'255,215,0', 8, true);
+
+   CreateSetupRow("Entrada (LIMIT):", "SETUP_ENTRY", panelX + 14, currentY + 24, C'255,215,0');
+   CreateSetupRow("Stop Loss:",       "SETUP_SL",    panelX + 14, currentY + 40, C'255,23,68');
+   CreateSetupRow("Take Profit 1:",   "SETUP_TP1",   panelX + 14, currentY + 56, C'0,230,118');
+   CreateSetupRow("Take Profit 2:",   "SETUP_TP2",   panelX + 14, currentY + 72, C'0,230,118');
+   CreateSetupRow("POC (VPVR):",      "SETUP_POC",   panelX + 14, currentY + 88, C'224,64,251');
+
+   currentY += 118;
+
+   // VSA Table
+   CreateLabel(prefix + "VSA_Title", "ANÁLISIS VSA MULTI-TIMEFRAME", panelX + 8, currentY, C'41,98,255', 8, true);
+   currentY += 16;
+
+   CreateLabel(prefix + "TH_TF", "TF", panelX + 12, currentY, C'120,123,134', 7, true);
+   CreateLabel(prefix + "TH_VSA", "VSA", panelX + 40, currentY, C'120,123,134', 7, true);
+   CreateLabel(prefix + "TH_VOL", "Volumen", panelX + 80, currentY, C'120,123,134', 7, true);
+   CreateLabel(prefix + "TH_BUY", "% Compra", panelX + 135, currentY, C'0,230,118', 7, true);
+   CreateLabel(prefix + "TH_SELL", "% Venta", panelX + 195, currentY, C'255,23,68', 7, true);
+
+   currentY += 14;
+
+   string tfNames[5] = {"5m", "15m", "1h", "4h", "1d"};
+   for(int i = 0; i < 5; i++)
+     {
+      int rowY = currentY + (i * 15);
+      CreateLabel(prefix + "TD_TF_" + tfNames[i], tfNames[i], panelX + 12, rowY, C'255,255,255', 7, true);
+      CreateLabel(prefix + "TD_VSA_" + tfNames[i], "BUY", panelX + 40, rowY, C'0,230,118', 7, true);
+      CreateLabel(prefix + "TD_VOL_" + tfNames[i], "--", panelX + 80, rowY, C'209,212,220', 7);
+      CreateLabel(prefix + "TD_BUY_" + tfNames[i], "--%", panelX + 135, rowY, C'0,230,118', 7);
+      CreateLabel(prefix + "TD_SELL_" + tfNames[i], "--%", panelX + 195, rowY, C'255,23,68', 7);
+     }
+
+   ChartRedraw(0);
+  }
+
+//+------------------------------------------------------------------+
+//| ACTUALIZADOR DE DATOS                                            |
+//+------------------------------------------------------------------+
+void UpdateDashboardData()
+  {
+   ENUM_TIMEFRAMES tfs[5] = {PERIOD_M5, PERIOD_M15, PERIOD_H1, PERIOD_H4, PERIOD_D1};
+   string tfNames[5] = {"5m", "15m", "1h", "4h", "1d"};
+
+   for(int i = 0; i < 5; i++)
+     {
+      MqlRates rates[];
+      ArraySetAsSeries(rates, true);
+      if(CopyRates(_Symbol, tfs[i], 0, InpVSAPeriod + 1, rates) < InpVSAPeriod) continue;
+
+      double avgVol = 0;
+      for(int j = 1; j <= InpVSAPeriod; j++) avgVol += (double)rates[j].tick_volume;
+      avgVol /= InpVSAPeriod;
+
+      double currentVol = (double)rates[0].tick_volume;
+      double range = rates[0].high - rates[0].low;
+      double buyPct = (range > 0) ? ((rates[0].close - rates[0].low) / range) * 100.0 : 50.0;
+      double sellPct = 100.0 - buyPct;
+
+      string vsaStatus = "NEU";
+      color vsaColor = C'120,123,134';
+
+      if(currentVol > (avgVol * InpVSAFactor))
+        {
+         if(buyPct > 55.0)      { vsaStatus = "BUY";  vsaColor = C'0,230,118'; }
+         else if(buyPct < 45.0) { vsaStatus = "SELL"; vsaColor = C'255,23,68'; }
+        }
+
+      ObjectSetString(0, prefix + "TD_VSA_" + tfNames[i], OBJPROP_TEXT, vsaStatus);
+      ObjectSetInteger(0, prefix + "TD_VSA_" + tfNames[i], OBJPROP_COLOR, vsaColor);
+      ObjectSetString(0, prefix + "TD_VOL_" + tfNames[i], OBJPROP_TEXT, DoubleToString(currentVol, 0));
+      ObjectSetString(0, prefix + "TD_BUY_" + tfNames[i], OBJPROP_TEXT, DoubleToString(buyPct, 1) + "%");
+      ObjectSetString(0, prefix + "TD_SELL_" + tfNames[i], OBJPROP_TEXT, DoubleToString(sellPct, 1) + "%");
+     }
+
+   ChartRedraw(0);
+  }
+
+//+------------------------------------------------------------------+
+//| AUXILIARES GRÁFICOS                                              |
+//+------------------------------------------------------------------+
+void CreateSetupRow(string lbl, string id, int x, int y, color valCol)
+  {
+   CreateLabel(prefix + "L_" + id, lbl, x, y, C'209,212,220', 7);
+   CreateLabel(prefix + id, "--", x + 100, y, valCol, 7, true);
+  }
+
+void CreateRectangle(string name, int x, int y, int w, int h, color bgColor, color borderColor)
+  {
+   ObjectCreate(0, name, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, name, OBJPROP_XSIZE, w);
+   ObjectSetInteger(0, name, OBJPROP_YSIZE, h);
+   ObjectSetInteger(0, name, OBJPROP_BGCOLOR, bgColor);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, borderColor);
+   ObjectSetInteger(0, name, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+  }
+
+void CreateLabel(string name, string text, int x, int y, color txtColor, int fontSize = 8, bool bold = false)
+  {
+   ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetString(0, name, OBJPROP_TEXT, text);
+   ObjectSetString(0, name, OBJPROP_FONT, bold ? "Arial Bold" : "Arial");
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, txtColor);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+  }
+
+void CreateBoxTF(string tfTitle, string status, int x, int y, int w, string id, color statusCol)
+  {
+   CreateRectangle(prefix + "Box_" + id, x, y, w, 40, InpBgColor, C'42,46,57');
+   CreateLabel(prefix + "LblTF_" + id, tfTitle, x + (w/4), y + 4, C'120,123,134', 7);
+   CreateLabel(prefix + "Val_" + id, status, x + 6, y + 18, statusCol, 8, true);
+  }
+//+------------------------------------------------------------------+
