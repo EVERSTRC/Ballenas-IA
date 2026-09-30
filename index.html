@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Bitcoin Trading Terminal - Real-Time WebSockets</title>
+    <title>Bitcoin Pro Trading Terminal - IA & VSA Engine</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -117,7 +117,7 @@
             display: flex;
             flex-direction: column;
             gap: 8px;
-            width: 275px;
+            width: 290px;
             max-height: calc(100% - 20px);
             overflow-y: auto;
             pointer-events: auto;
@@ -141,6 +141,16 @@
         .ai-card {
             border: 1px solid #e040fb;
             background: linear-gradient(135deg, rgba(19, 23, 34, 0.95), rgba(41, 14, 56, 0.95));
+        }
+
+        .narrative-box {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid #00e676;
+            border-radius: 4px;
+            padding: 6px;
+            font-size: 10px;
+            color: #d1d4dc;
+            line-height: 1.3;
         }
 
         .config-row { display: flex; justify-content: space-between; align-items: center; }
@@ -241,7 +251,8 @@
             <button id="btn-supertrend" class="btn-toggle">Supertrend</button>
             <button id="btn-filter" class="btn-toggle active-filter">Filtro ST: ON</button>
             <button id="btn-vsa" class="btn-toggle">S/R Ballenas VSA</button>
-            <button id="btn-signals" class="btn-toggle">Señales BUY/SELL</button>
+            <button id="btn-zones" class="btn-toggle">Order Blocks & FVG</button>
+            <button id="btn-audio" class="btn-toggle">Audio: ON</button>
             <button id="btn-panel" class="btn-toggle">Paneles IZQ</button>
         </div>
     </div>
@@ -253,11 +264,15 @@
         </div>
 
         <div id="left-container">
-            <!-- PANEL 1: ANALISIS IA Y PREDICCIÓN 15M / 1H -->
+            <!-- PANEL NARRATIVO Y MOTOR PREDICTIVO IA -->
             <div class="config-box ai-card">
                 <div class="config-row">
-                    <span class="txt-purple">🧠 MOTOR PREDICTIVO IA</span>
+                    <span class="txt-purple">🧠 REPORTE NARRATIVO IA EN VIVO</span>
                     <span id="ai-confidence" class="txt-yellow" style="font-size: 9px; font-weight: bold;">CONF: --</span>
+                </div>
+
+                <div class="narrative-box">
+                    <span id="ai-narrative-text">Sincronizando flujo de datos institucional...</span>
                 </div>
 
                 <!-- PREDICCION 15 MINUTOS -->
@@ -275,19 +290,10 @@
                     </div>
                 </div>
 
-                <!-- PREDICCION 1 HORA -->
-                <div class="pred-box">
-                    <div class="config-row">
-                        <span style="font-weight: bold; color: #fff;">⏳ Predicción 1 Hora:</span>
-                        <span id="ai-dir-1h" class="txt-yellow">ANALIZANDO...</span>
-                    </div>
-                    <div class="config-row">
-                        <span style="color:#8f96a3;">Probabilidad Éxito:</span>
-                        <span id="ai-prob-text-1h" class="txt-yellow">--%</span>
-                    </div>
-                    <div class="progress-bar-bg">
-                        <div id="ai-prob-bar-1h" class="progress-bar-fill"></div>
-                    </div>
+                <!-- BACKTESTING Y METRICAS DE RENDIMIENTO -->
+                <div class="config-row" style="margin-top: 2px;">
+                    <span style="color:#8f96a3;">Track Record IA (Backtest 15m):</span>
+                    <span id="ai-winrate" class="txt-green">WR: 0% (0/0)</span>
                 </div>
 
                 <div class="ai-divider"></div>
@@ -301,19 +307,19 @@
                     <span id="ai-factor-vsa" class="txt-yellow">--</span>
                 </div>
                 <div class="config-row">
-                    <span style="color:#8f96a3;">Tendencia Supertrend:</span>
-                    <span id="ai-factor-st" class="txt-yellow">--</span>
+                    <span style="color:#8f96a3;">Divergencia Oculta:</span>
+                    <span id="ai-factor-div" class="txt-yellow">NINGUNA</span>
                 </div>
             </div>
 
-            <!-- PANEL 2: SUPERTREND & VSA -->
+            <!-- PANEL SUPERTREND & VSA -->
             <div class="config-box" style="border-color: #00e676;">
                 <div class="config-row">
-                    <span style="color:#00e676; font-weight:bold;">SUPERTREND</span>
+                    <span style="color:#00e676; font-weight:bold;">ESTADO DE MERCADO</span>
                     <span id="st-filter-status" style="font-size: 9px; color: #ff9800;">[FILTRO ACTIVO]</span>
                 </div>
                 <div class="config-row">
-                    <span>Señal Actual:</span>
+                    <span>Señal Supertrend:</span>
                     <span id="dash-st-signal" class="txt-yellow">--</span>
                 </div>
                 <div class="config-row">
@@ -321,7 +327,7 @@
                     <span id="dash-st-price" style="font-weight:bold;">--</span>
                 </div>
                 <div class="config-row">
-                    <span>Estado Mercado:</span>
+                    <span>Régimen Dinámico:</span>
                     <span id="dash-market-regime" class="txt-yellow">--</span>
                 </div>
             </div>
@@ -371,7 +377,8 @@
         let showSupertrend = true;
         let useFilter = true;
         let showVsaLines = true;
-        let showVsaSignals = true;
+        let showZones = true;
+        let audioEnabled = true;
 
         let periodoVol = 20;
         let factorVol = 1.8;
@@ -379,9 +386,45 @@
         let currentCandleData = [];
         let mtfVsaCache = {};
         let vsaLinesToDraw = [];
+        let orderBlocks = [];
+        let fairValueGaps = [];
 
         let currentTF = "15m";
         let ws = null;
+
+        // Historial de Backtesting
+        let predictionsHistory = [];
+        let totalWins = 0;
+        let totalLosses = 0;
+
+        // Audio Context Sintetizado
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+
+        function playSound(type) {
+            if (!audioEnabled) return;
+            try {
+                if (!audioCtx) audioCtx = new AudioCtx();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                if (type === 'buy') {
+                    osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.2);
+                    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+                    osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+                } else if (type === 'sell') {
+                    osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.2);
+                    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+                    osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+                }
+            } catch (e) { console.error(e); }
+        }
 
         const statusEl = document.getElementById("status");
         const timeframeSelect = document.getElementById("timeframe");
@@ -392,7 +435,8 @@
         const btnSupertrend = document.getElementById("btn-supertrend");
         const btnFilter = document.getElementById("btn-filter");
         const btnVsa = document.getElementById("btn-vsa");
-        const btnSignals = document.getElementById("btn-signals");
+        const btnZones = document.getElementById("btn-zones");
+        const btnAudio = document.getElementById("btn-audio");
         const btnPanel = document.getElementById("btn-panel");
         const leftContainer = document.getElementById("left-container");
 
@@ -402,17 +446,15 @@
         const stFilterStatus = document.getElementById("st-filter-status");
 
         const aiConfidence = document.getElementById("ai-confidence");
+        const aiNarrativeText = document.getElementById("ai-narrative-text");
         const aiDir15m = document.getElementById("ai-dir-15m");
         const aiProbText15m = document.getElementById("ai-prob-text-15m");
         const aiProbBar15m = document.getElementById("ai-prob-bar-15m");
-
-        const aiDir1h = document.getElementById("ai-dir-1h");
-        const aiProbText1h = document.getElementById("ai-prob-text-1h");
-        const aiProbBar1h = document.getElementById("ai-prob-bar-1h");
+        const aiWinrate = document.getElementById("ai-winrate");
 
         const aiFactorHtf = document.getElementById("ai-factor-htf");
         const aiFactorVsa = document.getElementById("ai-factor-vsa");
-        const aiFactorSt = document.getElementById("ai-factor-st");
+        const aiFactorDiv = document.getElementById("ai-factor-div");
 
         const inputPeriod = document.getElementById("input-period");
         const inputFactor = document.getElementById("input-factor");
@@ -450,17 +492,63 @@
 
         chart.timeScale().subscribeVisibleLogicalRangeChange(() => drawOverlay());
 
+        function calculateRSI(candles, period = 14) {
+            if (candles.length < period + 1) return [];
+            let rsi = [];
+            let gains = 0, losses = 0;
+
+            for (let i = 1; i <= period; i++) {
+                let diff = candles[i].close - candles[i - 1].close;
+                if (diff >= 0) gains += diff;
+                else losses -= diff;
+            }
+
+            let avgGain = gains / period;
+            let avgLoss = losses / period;
+            rsi[period] = 100 - (100 / (1 + (avgGain / (avgLoss || 1))));
+
+            for (let i = period + 1; i < candles.length; i++) {
+                let diff = candles[i].close - candles[i - 1].close;
+                let gain = diff >= 0 ? diff : 0;
+                let loss = diff < 0 ? -diff : 0;
+
+                avgGain = (avgGain * (period - 1) + gain) / period;
+                avgLoss = (avgLoss * (period - 1) + loss) / period;
+
+                let rs = avgGain / (avgLoss || 1);
+                rsi[i] = 100 - (100 / (1 + rs));
+            }
+            return rsi;
+        }
+
+        function detectDivergences(candles) {
+            if (candles.length < 30) return { divergence: "NINGUNA" };
+            const rsi = calculateRSI(candles, 14);
+            const len = candles.length;
+
+            const currCandle = candles[len - 1];
+            const prevCandle = candles[len - 10];
+            const currRsi = rsi[len - 1];
+            const prevRsi = rsi[len - 10];
+
+            if (currCandle.high > prevCandle.high && currRsi < prevRsi) {
+                return { divergence: "ESFUERZO SIN RESULTADO (BAJISTA)" };
+            }
+            if (currCandle.low < prevCandle.low && currRsi > prevRsi) {
+                return { divergence: "ABSORCIÓN DE OFERTA (ALCISTA)" };
+            }
+
+            return { divergence: "NINGUNA" };
+        }
+
         function calculateADX(candles, period = 14) {
             if (!candles || candles.length < period * 2) return 0;
-            
             let trs = [], pdms = [], ndms = [];
             for (let i = 1; i < candles.length; i++) {
                 let up = candles[i].high - candles[i - 1].high;
                 let down = candles[i - 1].low - candles[i].low;
-                
                 pdms.push(up > down && up > 0 ? up : 0);
                 ndms.push(down > up && down > 0 ? down : 0);
-                
                 let tr = Math.max(
                     candles[i].high - candles[i].low,
                     Math.abs(candles[i].high - candles[i - 1].close),
@@ -481,15 +569,12 @@
 
                 let pdi = trSmoothed === 0 ? 0 : (pdmSmoothed / trSmoothed) * 100;
                 let ndi = trSmoothed === 0 ? 0 : (ndmSmoothed / trSmoothed) * 100;
-                
                 let diff = Math.abs(pdi - ndi);
                 let sum = pdi + ndi;
-                let dx = sum === 0 ? 0 : (diff / sum) * 100;
-                dxArray.push(dx);
+                dxArray.push(sum === 0 ? 0 : (diff / sum) * 100);
             }
 
-            if (dxArray.length < period) return 0;
-            return dxArray.slice(-period).reduce((a, b) => a + b, 0) / period;
+            return dxArray.length < period ? 0 : dxArray.slice(-period).reduce((a, b) => a + b, 0) / period;
         }
 
         function analyzeVSAData(candles, period, factor, isMTF = false) {
@@ -500,6 +585,9 @@
             let lastSupport = null;
             let lastResistance = null;
             let lastState = null;
+
+            orderBlocks = [];
+            fairValueGaps = [];
 
             for (let i = period; i < targetCandles.length; i++) {
                 let sumVol = 0;
@@ -524,10 +612,20 @@
                 if (isBuy) {
                     lastSupport = { price: candle.low, time: candle.time };
                     events.push({ type: 'BUY', time: candle.time, price: candle.close });
+                    if (i > 0) orderBlocks.push({ top: candle.high, bottom: candle.low, type: 'BULLISH', time: candle.time });
                 }
                 if (isSell) {
                     lastResistance = { price: candle.high, time: candle.time };
                     events.push({ type: 'SELL', time: candle.time, price: candle.close });
+                    if (i > 0) orderBlocks.push({ top: candle.high, bottom: candle.low, type: 'BEARISH', time: candle.time });
+                }
+
+                // Detección Fair Value Gaps (FVG)
+                if (i >= 2) {
+                    const c1 = targetCandles[i - 2];
+                    const c3 = targetCandles[i];
+                    if (c3.low > c1.high) fairValueGaps.push({ top: c3.low, bottom: c1.high, type: 'BULLISH', time: c3.time });
+                    if (c3.high < c1.low) fairValueGaps.push({ top: c1.low, bottom: c3.high, type: 'BEARISH', time: c3.time });
                 }
 
                 if (i === targetCandles.length - 1) {
@@ -536,6 +634,9 @@
                     lastState = { isBuy, isSell, isWhale, vol: effVol, avgVol, buyPct, sellPct };
                 }
             }
+
+            orderBlocks = orderBlocks.slice(-3);
+            fairValueGaps = fairValueGaps.slice(-3);
 
             return { events, lastSupport, lastResistance, lastState };
         }
@@ -627,18 +728,6 @@
                 }
             }
 
-            if (showVsaSignals) {
-                const vsaAn = analyzeVSAData(candles, periodoVol, factorVol);
-                vsaAn.events.forEach(ev => {
-                    if (ev.type === 'BUY') {
-                        stMarkers.push({ time: ev.time, position: 'belowBar', color: '#00e676', shape: 'arrowUp', text: 'BUY' });
-                    } else if (ev.type === 'SELL') {
-                        stMarkers.push({ time: ev.time, position: 'aboveBar', color: '#ff1744', shape: 'arrowDown', text: 'SELL' });
-                    }
-                });
-                stMarkers.sort((a, b) => a.time - b.time);
-            }
-
             return { stMarkers, lastSignal, currentTrend: trend[len - 1] };
         }
 
@@ -690,12 +779,68 @@
             return { direction, prob };
         }
 
+        function updateBacktestTracker(pred15m) {
+            if (currentCandleData.length < 2) return;
+            const currentCandle = currentCandleData[currentCandleData.length - 1];
+
+            // Evaluar predicciones pendientes
+            predictionsHistory.forEach(pred => {
+                if (!pred.evaluated && (currentCandle.time - pred.time) >= 900) { // 15 Minutos transcurridos
+                    pred.evaluated = true;
+                    if ((pred.direction.includes("BUY") && currentCandle.close > pred.startPrice) ||
+                        (pred.direction.includes("SELL") && currentCandle.close < pred.startPrice)) {
+                        totalWins++;
+                    } else {
+                        totalLosses++;
+                    }
+                }
+            });
+
+            // Registrar nueva predicción
+            const lastTracked = predictionsHistory[predictionsHistory.length - 1];
+            if (!lastTracked || (currentCandle.time - lastTracked.time) >= 900) {
+                predictionsHistory.push({
+                    time: currentCandle.time,
+                    startPrice: currentCandle.close,
+                    direction: pred15m.direction,
+                    evaluated: false
+                });
+            }
+
+            const totalEvaluated = totalWins + totalLosses;
+            const winratePct = totalEvaluated > 0 ? Math.round((totalWins / totalEvaluated) * 100) : 0;
+            aiWinrate.innerText = `WR: ${winratePct}% (${totalWins}/${totalEvaluated})`;
+            aiWinrate.className = winratePct >= 55 ? "txt-green" : "txt-red";
+        }
+
+        function generateAiNarrative(pred15m, divInfo, stInfo) {
+            const lastPx = currentCandleData.length > 0 ? currentCandleData[currentCandleData.length - 1].close.toFixed(2) : "--";
+            let narrative = `Precio BTC: $${lastPx}. `;
+
+            if (pred15m.direction.includes("BUY")) {
+                narrative += `Se detecta acumulación activa con ${pred15m.prob}% de probabilidad alcista. `;
+            } else {
+                narrative += `Se identifica presión vendedora con ${pred15m.prob}% de probabilidad bajista. `;
+            }
+
+            if (divInfo.divergence !== "NINGUNA") {
+                narrative += `¡Atención! Divergencia: ${divInfo.divergence}. `;
+            } else {
+                narrative += `Sin divergencias de volumen significativas. `;
+            }
+
+            if (orderBlocks.length > 0) {
+                const ob = orderBlocks[orderBlocks.length - 1];
+                narrative += `Bloque de Ordenes cercano en $${ob.bottom.toFixed(1)} - $${ob.top.toFixed(1)}.`;
+            }
+
+            aiNarrativeText.innerText = narrative;
+        }
+
         function updateAIDashboard(stInfo) {
             const weights15m = { '1m': 0.15, '3m': 0.25, '5m': 0.30, '15m': 0.20, '30m': 0.05, '1h': 0.05 };
-            const weights1h = { '15m': 0.15, '30m': 0.25, '1h': 0.35, '4h': 0.15, '1d': 0.10 };
-
             const pred15m = calculatePredictionForHorizon(weights15m, stInfo);
-            const pred1h = calculatePredictionForHorizon(weights1h, stInfo);
+            const divInfo = detectDivergences(currentCandleData);
 
             aiProbText15m.innerText = `${pred15m.prob}%`;
             aiProbBar15m.style.width = `${pred15m.prob}%`;
@@ -705,39 +850,14 @@
                 aiDir15m.className = "txt-green";
                 aiProbText15m.className = "txt-green";
                 aiProbBar15m.style.backgroundColor = "#00e676";
-            } else if (pred15m.direction.includes("SELL")) {
+            } else {
                 aiDir15m.className = "txt-red";
                 aiProbText15m.className = "txt-red";
                 aiProbBar15m.style.backgroundColor = "#ff1744";
-            } else {
-                aiDir15m.className = "txt-yellow";
-                aiProbText15m.className = "txt-yellow";
-                aiProbBar15m.style.backgroundColor = "#ffd700";
             }
 
-            aiProbText1h.innerText = `${pred1h.prob}%`;
-            aiProbBar1h.style.width = `${pred1h.prob}%`;
-            aiDir1h.innerText = pred1h.direction;
-
-            if (pred1h.direction.includes("BUY")) {
-                aiDir1h.className = "txt-green";
-                aiProbText1h.className = "txt-green";
-                aiProbBar1h.style.backgroundColor = "#00e676";
-            } else if (pred1h.direction.includes("SELL")) {
-                aiDir1h.className = "txt-red";
-                aiProbText1h.className = "txt-red";
-                aiProbBar1h.style.backgroundColor = "#ff1744";
-            } else {
-                aiDir1h.className = "txt-yellow";
-                aiProbText1h.className = "txt-yellow";
-                aiProbBar1h.style.backgroundColor = "#ffd700";
-            }
-
-            const avgProb = Math.round((pred15m.prob + pred1h.prob) / 2);
-            let confText = "MEDIA";
-            if (avgProb >= 78) confText = "ALTA";
-            else if (avgProb <= 60) confText = "BAJA";
-            aiConfidence.innerText = `CONF: ${confText}`;
+            aiFactorDiv.innerText = divInfo.divergence;
+            aiFactorDiv.className = divInfo.divergence.includes("ALCISTA") ? "txt-green" : (divInfo.divergence.includes("BAJISTA") ? "txt-red" : "txt-yellow");
 
             const d1Data = mtfVsaCache['1d'] ? mtfVsaCache['1d'].lastState : null;
             const h4Data = mtfVsaCache['4h'] ? mtfVsaCache['4h'].lastState : null;
@@ -769,37 +889,59 @@
                 }
             }
 
-            if (stInfo) {
-                if (stInfo.currentTrend === 1) {
-                    aiFactorSt.innerText = "TENDENCIA ALCISTA";
-                    aiFactorSt.className = "txt-green";
-                } else if (stInfo.currentTrend === -1) {
-                    aiFactorSt.innerText = "TENDENCIA BAJISTA";
-                    aiFactorSt.className = "txt-red";
-                }
-            }
+            updateBacktestTracker(pred15m);
+            generateAiNarrative(pred15m, divInfo, stInfo);
         }
 
         function drawOverlay() {
             ctx.clearRect(0, 0, overlay.width, overlay.height);
-            if (!showVsaLines || vsaLinesToDraw.length === 0) return;
 
-            vsaLinesToDraw.forEach(line => {
-                const y = candlestickSeries.priceToCoordinate(line.price);
-                if (y !== null && y >= 0 && y <= overlay.height) {
-                    ctx.beginPath();
-                    ctx.setLineDash([4, 4]);
-                    ctx.strokeStyle = line.color;
-                    ctx.lineWidth = 1;
-                    ctx.moveTo(0, y);
-                    ctx.lineTo(overlay.width, y);
-                    ctx.stroke();
+            // Dibujar Order Blocks y FVGs
+            if (showZones) {
+                orderBlocks.forEach(ob => {
+                    const yTop = candlestickSeries.priceToCoordinate(ob.top);
+                    const yBottom = candlestickSeries.priceToCoordinate(ob.bottom);
+                    if (yTop !== null && yBottom !== null) {
+                        ctx.fillStyle = ob.type === 'BULLISH' ? 'rgba(0, 230, 118, 0.15)' : 'rgba(255, 23, 68, 0.15)';
+                        ctx.fillRect(0, yTop, overlay.width, yBottom - yTop);
+                        ctx.fillStyle = ob.type === 'BULLISH' ? '#00e676' : '#ff1744';
+                        ctx.font = '9px sans-serif';
+                        ctx.fillText(`OB ${ob.type}`, 10, yTop + 10);
+                    }
+                });
 
-                    ctx.font = '10px sans-serif';
-                    ctx.fillStyle = line.color;
-                    ctx.fillText(`${line.label}: $${line.price.toFixed(2)}`, overlay.width - 150, y - 4);
-                }
-            });
+                fairValueGaps.forEach(fvg => {
+                    const yTop = candlestickSeries.priceToCoordinate(fvg.top);
+                    const yBottom = candlestickSeries.priceToCoordinate(fvg.bottom);
+                    if (yTop !== null && yBottom !== null) {
+                        ctx.fillStyle = 'rgba(255, 215, 0, 0.12)';
+                        ctx.fillRect(0, yTop, overlay.width, yBottom - yTop);
+                        ctx.fillStyle = '#ffd700';
+                        ctx.font = '9px sans-serif';
+                        ctx.fillText(`FVG Ineficiencia`, 100, yTop + 10);
+                    }
+                });
+            }
+
+            // Dibujar Líneas S/R VSA
+            if (showVsaLines && vsaLinesToDraw.length > 0) {
+                vsaLinesToDraw.forEach(line => {
+                    const y = candlestickSeries.priceToCoordinate(line.price);
+                    if (y !== null && y >= 0 && y <= overlay.height) {
+                        ctx.beginPath();
+                        ctx.setLineDash([4, 4]);
+                        ctx.strokeStyle = line.color;
+                        ctx.lineWidth = 1;
+                        ctx.moveTo(0, y);
+                        ctx.lineTo(overlay.width, y);
+                        ctx.stroke();
+
+                        ctx.font = '10px sans-serif';
+                        ctx.fillStyle = line.color;
+                        ctx.fillText(`${line.label}: $${line.price.toFixed(2)}`, overlay.width - 150, y - 4);
+                    }
+                });
+            }
         }
 
         function updateChartAndUI() {
@@ -852,9 +994,7 @@
                             volume: parseFloat(d[5])
                         }));
                     }
-                } catch (err) {
-                    console.warn(`Fallback fetch en ${url}:`, err);
-                }
+                } catch (err) { console.warn(`Fallback fetch en ${url}:`, err); }
             }
             return [];
         }
@@ -939,6 +1079,12 @@
                     }
                 }
 
+                // Activar audio en velas ballena
+                const vsaAn = analyzeVSAData(currentCandleData, periodoVol, factorVol);
+                if (vsaAn.lastState && vsaAn.lastState.isWhale) {
+                    playSound(vsaAn.lastState.isBuy ? 'buy' : 'sell');
+                }
+
                 updateChartAndUI();
             };
 
@@ -981,10 +1127,16 @@
             drawOverlay();
         });
 
-        btnSignals.addEventListener("click", () => {
-            showVsaSignals = !showVsaSignals;
-            btnSignals.classList.toggle("inactive", !showVsaSignals);
-            updateChartAndUI();
+        btnZones.addEventListener("click", () => {
+            showZones = !showZones;
+            btnZones.classList.toggle("inactive", !showZones);
+            drawOverlay();
+        });
+
+        btnAudio.addEventListener("click", () => {
+            audioEnabled = !audioEnabled;
+            btnAudio.classList.toggle("inactive", !audioEnabled);
+            btnAudio.innerText = audioEnabled ? "Audio: ON" : "Audio: OFF";
         });
 
         btnPanel.addEventListener("click", () => {
