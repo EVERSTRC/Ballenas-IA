@@ -451,8 +451,8 @@
         let currentCandleData = [];
         let mtfVsaCache = {};
         let vsaLinesToDraw = [];
+        let activePriceLines = [];
         
-        let tradeSetupData = { entry: null, sl: null, tp1: null, tp2: null };
         let vpvrData = { buckets: [], pocPrice: null, maxVol: 0 };
         
         let lastNotifiedSignalTime = null;
@@ -532,7 +532,42 @@
                 .catch(err => console.error("Error Telegram:", err));
         }
 
-        /* RECOPILAR SOPORTES Y RESISTENCIAS MULTI-TIMEFRAME */
+        const chart = LightweightCharts.createChart(chartContainer, {
+            width: chartContainer.clientWidth,
+            height: chartContainer.clientHeight,
+            layout: { background: { type: 'solid', color: '#000000' }, textColor: '#d1d4dc' },
+            grid: { vertLines: { color: '#161923' }, horzLines: { color: '#161923' } },
+            timeScale: { borderColor: '#2a2e39', timeVisible: true, secondsVisible: false, rightOffset: 15 },
+            rightPriceScale: { borderColor: '#2a2e39', autoScale: true }
+        });
+
+        const candlestickSeries = chart.addCandlestickSeries({
+            upColor: '#089981', downColor: '#f23645', borderVisible: false, wickUpColor: '#089981', wickDownColor: '#f23645'
+        });
+
+        function clearNativePriceLines() {
+            activePriceLines.forEach(line => candlestickSeries.removePriceLine(line));
+            activePriceLines = [];
+        }
+
+        /* DIBUJO DE LÍNEAS NATIVAS MULTI-TIMEFRAME CON ETIQUETAS FLOTANTES FIJAS */
+        function renderNativePriceLines() {
+            clearNativePriceLines();
+            if (!showVsaLines) return;
+
+            vsaLinesToDraw.forEach(item => {
+                const pLine = candlestickSeries.createPriceLine({
+                    price: item.price,
+                    color: item.color,
+                    lineWidth: item.label.includes("4H") || item.label.includes("1D") ? 2 : 1,
+                    lineStyle: LightweightCharts.LineStyle.Solid,
+                    axisLabelVisible: true,
+                    title: item.label
+                });
+                activePriceLines.push(pLine);
+            });
+        }
+
         function collectAllVSALines() {
             let lines = [];
             
@@ -561,9 +596,9 @@
             });
 
             vsaLinesToDraw = lines;
+            renderNativePriceLines();
         }
 
-        /* MOTOR DE SUPERTREND SIN REPINTADO */
         function getSupertrendMarkers(candles, atrPeriods = 14, multiplier = 2.0) {
             if (!candles || candles.length < atrPeriods + 2) return { stMarkers: [], lastSignal: null };
             const len = candles.length;
@@ -649,19 +684,6 @@
             return { stMarkers, lastSignal };
         }
 
-        const chart = LightweightCharts.createChart(chartContainer, {
-            width: chartContainer.clientWidth,
-            height: chartContainer.clientHeight,
-            layout: { background: { type: 'solid', color: '#000000' }, textColor: '#d1d4dc' },
-            grid: { vertLines: { color: '#161923' }, horzLines: { color: '#161923' } },
-            timeScale: { borderColor: '#2a2e39', timeVisible: true, secondsVisible: false, rightOffset: 15 },
-            rightPriceScale: { borderColor: '#2a2e39', autoScale: true }
-        });
-
-        const candlestickSeries = chart.addCandlestickSeries({
-            upColor: '#089981', downColor: '#f23645', borderVisible: false, wickUpColor: '#089981', wickDownColor: '#f23645'
-        });
-
         function updateStatus(text, color, bgColor) {
             statusEl.innerText = text;
             statusEl.style.color = color;
@@ -670,8 +692,16 @@
         }
 
         function resizeCanvas() {
-            overlay.width = chartContainer.clientWidth;
-            overlay.height = chartContainer.clientHeight;
+            const dpr = window.devicePixelRatio || 1;
+            const width = chartContainer.clientWidth;
+            const height = chartContainer.clientHeight;
+
+            overlay.width = width * dpr;
+            overlay.height = height * dpr;
+            overlay.style.width = width + "px";
+            overlay.style.height = height + "px";
+
+            ctx.scale(dpr, dpr);
             drawOverlay();
         }
 
@@ -879,17 +909,15 @@
             const reward = Math.abs(tp1 - entry);
             const rr = risk > 0 ? (reward / risk).toFixed(1) : "--";
             document.getElementById("setup-rr").innerText = `1 : ${rr}`;
-
-            tradeSetupData = { entry, sl, tp1, tp2 };
         }
 
-        /* DIBUJO DE LÍNEAS DE SOPORTE Y RESISTENCIA VSA CON ETIQUETAS MTF + VPVR */
         function drawOverlay() {
-            ctx.clearRect(0, 0, overlay.width, overlay.height);
+            const width = chartContainer.clientWidth;
+            const height = chartContainer.clientHeight;
+            ctx.clearRect(0, 0, width, height);
 
-            // 1. DIBUJAR VPVR
             if (showVPVR && vpvrData.buckets.length > 0) {
-                const maxBarWidth = overlay.width * 0.15;
+                const maxBarWidth = width * 0.15;
                 vpvrData.buckets.forEach(b => {
                     const yTop = candlestickSeries.priceToCoordinate(b.priceHigh);
                     const yBottom = candlestickSeries.priceToCoordinate(b.priceLow);
@@ -897,7 +925,7 @@
                         const h = Math.max(1, Math.abs(yBottom - yTop));
                         const w = (b.volume / vpvrData.maxVol) * maxBarWidth;
                         ctx.fillStyle = "rgba(41, 98, 255, 0.25)";
-                        ctx.fillRect(overlay.width - w, Math.min(yTop, yBottom), w, h);
+                        ctx.fillRect(width - w, Math.min(yTop, yBottom), w, h);
                     }
                 });
 
@@ -909,49 +937,11 @@
                         ctx.setLineDash([4, 4]);
                         ctx.beginPath();
                         ctx.moveTo(0, yPoc);
-                        ctx.lineTo(overlay.width, yPoc);
+                        ctx.lineTo(width, yPoc);
                         ctx.stroke();
                         ctx.setLineDash([]);
                     }
                 }
-            }
-
-            // 2. DIBUJAR LÍNEAS DE SOPORTE / RESISTENCIA MTF Y ETIQUETAS
-            if (showVsaLines && vsaLinesToDraw.length > 0) {
-                const labelX = overlay.width - 70; // Posición de las etiquetas flotantes en el borde derecho
-
-                vsaLinesToDraw.forEach(line => {
-                    const y = candlestickSeries.priceToCoordinate(line.price);
-                    if (y !== null && y >= 0 && y <= overlay.height) {
-                        // Dibujar Línea Horizontal
-                        ctx.strokeStyle = line.type === 'BUY' ? '#00e676' : '#ff1744';
-                        ctx.lineWidth = 1.5;
-                        ctx.beginPath();
-                        ctx.moveTo(0, y);
-                        ctx.lineTo(overlay.width, y);
-                        ctx.stroke();
-
-                        // Dibujar Etiqueta Flotante (badge)
-                        const text = line.label;
-                        ctx.font = "bold 9px -apple-system, BlinkMacSystemFont, sans-serif";
-                        const textWidth = ctx.measureText(text).width;
-                        const paddingX = 4;
-                        const badgeWidth = textWidth + (paddingX * 2);
-                        const badgeHeight = 14;
-
-                        // Fondo de la etiqueta
-                        ctx.fillStyle = line.type === 'BUY' ? '#00b0ff' : '#ff1744';
-                        if (line.label.includes("Chart")) ctx.fillStyle = line.type === 'BUY' ? '#00e5ff' : '#ff5252';
-
-                        ctx.fillRect(labelX - (badgeWidth / 2), y - (badgeHeight / 2), badgeWidth, badgeHeight);
-
-                        // Texto de la etiqueta
-                        ctx.fillStyle = "#ffffff";
-                        ctx.textAlign = "center";
-                        ctx.textBaseline = "middle";
-                        ctx.fillText(text, labelX, y);
-                    }
-                });
             }
         }
 
@@ -1118,7 +1108,7 @@
         btnVsa.addEventListener("click", () => {
             showVsaLines = !showVsaLines;
             btnVsa.classList.toggle("inactive", !showVsaLines);
-            drawOverlay();
+            renderNativePriceLines();
         });
 
         btnVpvr.addEventListener("click", () => {
